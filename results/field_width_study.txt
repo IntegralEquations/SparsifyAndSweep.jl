@@ -1,0 +1,29 @@
+
+field = diverging, shape = gaussian, fronts = 2
+width      ω/2π=16   ω/2π=32   ω/2π=64     (iterations)
+0.050      3         4         5        
+0.075      3         4         5        
+0.100      3         4         5        
+0.125      3         4         5        
+0.150      3         4         5        
+
+field = converging, shape = gaussian, fronts = 2
+width      ω/2π=16   ω/2π=32   ω/2π=64     (iterations)
+0.050      3         4         6        
+0.075      4         5         6        
+0.100      4         5         6        
+0.125      4         5         6        
+0.150      4         5         6        
+
+field = multi, shape = gaussian, fronts = 2
+width      ω/2π=16   ω/2π=32   ω/2π=64     (iterations)
+0.015      8         7         8        
+0.020      7         7         9        
+0.030      7         8         9        
+0.040      7         8         9        
+
+field = diverging, shape = bump, fronts = 2
+width      ω/2π=16   ω/2π=32   ω/2π=64     (iterations)
+0.200      3         4         5        
+0.300      3         4         5        
+0.400      4         4         5        

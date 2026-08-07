@@ -1,0 +1,8 @@
+ω/(2π)  N         levels   T_setup   T_apply   iters  sweepErr    leaves   max leaf 
+4       31^3      1        20.0      0.579     4      4.029e-02   8        21853    
+4       31^3      2        25.8      1.156     4      5.516e-02   64       6929     
+8       63^3      1        167.1     2.920     4      0.000e+00   16       69277    
+8       63^3      2        61.4      3.399     5      4.836e-02   256      12337    
+[32m[1mPrecompiling[22m[39m packages...
+   1730.0 ms[32m  ✓ [39mSparsifyAndSweep
+  1 dependency successfully precompiled in 2 seconds. 45 already precompiled.

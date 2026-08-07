@@ -1,0 +1,8 @@
+f=64 n=511 N=261121 field=converging
+H-direct (exact H^-1): iters=3  setup=3.9s
+b= 8 C= 8.0 nsamp= 200 : iters= 6  setup=  2.8s  apply=0.12s  sweepErr=2.27e-01  stencils=3966
+b= 8 C= 8.0 nsamp= 511 : iters= 6  setup=  2.7s  apply=0.21s  sweepErr=2.26e-01  stencils=7106
+b= 8 C= 4.0 nsamp= 200 : iters=10  setup=  2.6s  apply=0.20s  sweepErr=4.82e-01  stencils=3966
+b= 8 C=12.0 nsamp= 200 : iters= 6  setup=  3.8s  apply=0.27s  sweepErr=1.79e-01  stencils=3966
+b=12 C= 8.0 nsamp= 200 : iters= 5  setup=  5.0s  apply=0.38s  sweepErr=NaN  stencils=6429
+no preconditioner    : iters=136 converged=true relres=9.97e-07  time=8.9s

@@ -1,0 +1,18 @@
+omega/(2pi) = 256, N = 2047^2 = 4190209, h = lambda/8, b = 8, C = 12, two fronts, GMRES(20), tol 1e-6
+field       freq    N         T_setup    T_apply    T_solve  N_iter relres    
+converging  256     2047^2    106.16     5.401      59.10    9      2.14e-08    slices=256  rss=13.7GB
+diverging   256     2047^2    98.30      5.512      50.35    8      1.69e-08    slices=256  rss=13.4GB
+multi       256     2047^2    C=12.0  103.55     5.151      79.09    13     8.89e-09    slices=256  rss=14.5GB
+random      256     2047^2    C=12.0  87.83      3.426      35.02    11     6.75e-09    slices=256  rss=14.7GB
+
+--- same runs with C = 16 (the value the C_opt-vs-slice-count trend predicts for 256 slices) ---
+converging  256     2047^2    C=16.0  57.59      2.224      26.34    8      5.80e-08    slices=256  rss=11.3GB
+diverging   256     2047^2    C=16.0  51.77      2.347      22.04    7      3.01e-08    slices=256  rss=12.7GB
+multi       256     2047^2    C=16.0  51.57      2.335      45.14    13     5.23e-09    slices=256  rss=13.7GB
+random      256     2047^2    C=16.0  58.39      2.578      38.24    10     1.10e-08    slices=256  rss=13.0GB
+
+--- C = 12 rerun, uncontended (the earlier C=12 block above shared the machine with the C-scan) ---
+converging  256     2047^2    C=12.0  49.54      2.226      27.63    9      2.14e-08    slices=256  rss=13.2GB
+diverging   256     2047^2    C=12.0  51.04      2.467      36.50    8      1.69e-08    slices=256  rss=13.7GB
+multi       256     2047^2    C=12.0  62.66      3.396      52.16    13     8.89e-09    slices=256  rss=13.5GB
+random      256     2047^2    C=12.0  60.19      2.811      44.77    11     6.75e-09    slices=256  rss=13.2GB

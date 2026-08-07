@@ -1,0 +1,14 @@
+# Editor / OS cruft
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+
+# Julia
+/docs/build/
+*.cov
+
+# Manifest.toml is deliberately *not* ignored: this package reproduces published
+# numerical results, so the exact resolved dependency versions are part of the
+# record.

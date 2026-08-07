@@ -1,0 +1,24 @@
+
+field = converging   (iterations; b = 8, two fronts, GMRES(20), tol 1e-6)
+ω/2π     C=6     C=8     C=10    C=12    C=14    C=16      slices
+32       5       5       5       5       5       5         32
+64       7       6       6       6       6       6         64
+128      11      8       7       7       7       7         128
+
+field = diverging   (iterations; b = 8, two fronts, GMRES(20), tol 1e-6)
+ω/2π     C=6     C=8     C=10    C=12    C=14    C=16      slices
+32       4       4       4       4       4       4         32
+64       6       5       4       4       5       5         64
+128      11      8       6       5       5       6         128
+
+field = multi   (iterations; b = 8, two fronts, GMRES(20), tol 1e-6)
+ω/2π     C=6     C=8     C=10    C=12    C=14    C=16      slices
+32       7       7       7       7       8       8         32
+64       9       9       9       9       9       9         64
+128      12      10      10      10      10      10        128
+
+field = random   (iterations; b = 8, two fronts, GMRES(20), tol 1e-6)
+ω/2π     C=6     C=8     C=10    C=12    C=14    C=16      slices
+32       5       5       5       5       5       5         32
+64       7       7       6       6       6       6         64
+128      12      10      9       9       9       9         128

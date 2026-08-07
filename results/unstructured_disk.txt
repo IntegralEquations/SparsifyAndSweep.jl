@@ -1,0 +1,14 @@
+Unstructured (Vioreanu-Rokhlin / DIM) penetrable disk, k = 5, eta = 1.25, reltol 1e-8
+N_Q = 157686 unstructured DOFs; reduced solve on the Omega block.
+Reference: the hybrid_ls solver's own S^(C) on the full hybrid system -> 6 iterations.
+
+ppw_cart   N_cart   b_PML     PML/lam  iters    t_setup   err_vs_Mie 
+50.3       78400     50      0.99      7       5.53s     4.26e-09   
+15.9       7744      16      1.01      9       5.30s     3.53e-09   
+8.0        1936      8       0.99      13      3.92s     2.73e-09   
+
+unpreconditioned: 29 iterations, err 5.08e-09
+
+PML thickness is the sensitive parameter: at ppw_cart = 50.3 with b = 8 (0.16 lambda
+of PML, the package default tuned at h = lambda/8) the count is 12, not 7.  The box must
+therefore be padded by ~2 wavelengths, not by a fraction of the scatterer size.
