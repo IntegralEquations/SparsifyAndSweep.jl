@@ -1,0 +1,56 @@
+Compact single-precision factors, and setup hygiene.  Converging lens,
+omega/2pi = 256, n = 2047, 1024 boxes of ~64 points unless stated, 16 threads,
+one process per row (examples/lsweep_compare.jl --only=<row>).
+
+THE CHANGE.  lsweep_setup(...; factors = :compact), now the default, re-stores each
+box's UMFPACK factorisation as CSC L and U in ComplexF32 with Int32 indices --
+12 bytes per nonzero against UMFPACK's 24 -- together with the row scaling and
+permutations that reproduce its solve, (Rs .* A)[p, q] = L * U.  The triangular
+solves run in Julia, accumulate in double precision, allocate nothing, and skip
+zero entries of the running vector, which is most of the forward pass for a trace
+right-hand side.  UMFPACK's own copy is freed as soon as it has been read.
+Correctness (compact_check.jl, omega/2pi = 64):
+  per-box solve, compact vs UMFPACK       worst relative difference 1.2e-06
+  one application, compact vs UMFPACK     2.9e-05
+  error against H \ f                     5.12e-02 either way -- the preconditioner is unchanged
+  bitwise identical across worker counts  yes (see the BLAS note below)
+  factor bytes per 6536-unknown box       8.6 MB -> 4.4 MB
+  compact solve! allocation               0 bytes
+
+RESULT at omega/2pi = 256:
+                                       setup     apply   iters   solve     peak
+  pad 8, umfpack, old setup            11.10s   1.554s    14    28.34s   20.5GB
+  pad 8, umfpack, new setup            10.27s   1.563s    14    28.61s   20.4GB
+  pad 8, compact                       12.13s   1.089s    14    19.44s   14.5GB
+  pad 16, umfpack                      15.36s   2.239s    10    27.95s   27.0GB
+  pad 16, compact                      16.82s   1.472s    10    18.36s   18.2GB
+  pad 16, 128-pt boxes, umfpack        14.36s   1.663s    10    22.01s   21.3GB
+  pad 16, 128-pt boxes, compact        17.93s   1.069s    10    14.85s   15.8GB
+  layered sweep, for reference         29.36s   2.059s     9    23.99s   15.1GB
+
+Half the bytes buys a 1.44-1.56x faster application and 1.47-1.52x faster solve
+phase, 29-33% less memory, the same iteration counts, and costs about 2s of setup
+for the extraction.  The result fits the diagnosis in results/affinity_test.txt:
+the application was at the DRAM-bandwidth ceiling, so bytes were the lever, and
+the gain is short of 2x because the solves are latency-bound per core as well.
+With compact factors the L-sweeps solve phase is again ahead of the layered
+sweep's at this frequency, 19.4s against 24.0s, which restores the many-right-hand-
+side case.  Time to solution: 31.6s (pad 8) and 32.8s (128-point boxes, pad 16)
+against 53.4s for the layered sweep.
+
+SETUP HYGIENE.  Two changes to lsweep_setup, both in the default path.
+  - BLAS is pinned to one thread for the factorisation loop and restored after.
+    The boxes are the parallelism; BLAS threads inside each UMFPACK call only spun
+    (92 CPU-seconds of a 150-second setup, results/cpu_usage.txt).  The pin is
+    unconditional, and has to be: the BLAS thread count changes the factors in
+    their last bits, so a one-worker and a sixteen-worker setup only agree bitwise
+    if both factorise with the same count.  That is also the fix for the 3x
+    slowdown of 4 ranks x 4 threads in results/lsweep_mpi_scaling.txt.
+  - The local matrix is assembled straight into CSC from the stencil rows instead
+    of through push!-into-COO and sparse(), which sorts and copies.  Bitwise the
+    same matrix; 11.1 MB -> 7.5 MB allocated per box, most of what remains being
+    the gamma-stencil fitting rather than assembly.
+  Together: 11.10s -> 10.27s of setup on this dedicated node.  The BLAS spin was
+  mostly wasted CPU rather than wall time here; the wall-time win is in mixed mode.
+  The compact extraction then adds about 24 MB of transient allocation per box
+  (UMFPACK's CSR L, its U, and the double-precision intermediates), 1.9s at 256.

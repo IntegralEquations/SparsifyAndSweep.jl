@@ -12,3 +12,4 @@
 # Manifest.toml is deliberately *not* ignored: this package reproduces published
 # numerical results, so the exact resolved dependency versions are part of the
 # record.
+test/Manifest.toml

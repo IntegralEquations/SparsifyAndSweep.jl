@@ -15,6 +15,25 @@
 # recovers the plain left-to-right sweep of Algorithms 1–2.
 #
 # ---------------------------------------------------------------------------
+# Sweep axis, and the bi-directional alternation of Zepeda-Núñez & Zhao (SIAM J.
+# Sci. Comput. 38 (2016) B866–B888, Alg. 2).
+#
+# Nothing below singles out x₁: `sweep_setup(...; axis = 2)` cuts the grid into
+# slices along x₂ instead, and `axis = -1` runs the one-front sweep towards -x₁.
+# A sweep along one axis reproduces every wave that never turns back along that
+# axis — the moving PML discards what leaves a slice and returns — so in a medium
+# that reflects (a disc, a lattice of discs) a single sweep is one reflection
+# short, and each GMRES iteration buys one more.  Zepeda-Núñez & Zhao sweep once
+# in horizontal layers, form the residual, sweep the residual in vertical layers
+# and add:  u = M₁ f + M₂ (f − H M₁ f).  Waves that turn back along x₁ but not
+# along x₂ live inside the x₂ slices and are exact there, so the second pass
+# recovers what the first discarded, up to the waves that turn back along both.
+# `AlternatingSweep` below is that construction for any list of factorisations
+# applied in turn to the running residual: `axes = (1, 2)` is their algorithm;
+# `axes = (1, -1)` with one front alternates the direction on one axis instead.
+# The same wrapper chains L-sweeps (lsweep.jl): a second L-sweep on a
+# checkerboard shifted by half a box, applied to the residual of the first.
+# ---------------------------------------------------------------------------
 # Recursion (§3.1, "the recursive approach", ref. [20]).
 #
 # Each slice subproblem is itself a sparse system on a slab: quasi-1D in 2D,
@@ -175,11 +194,16 @@ struct SweepContext{D}
     lo2::Float64
     step2::Float64
     fronts::Int
+    dir::Int                             # one front: +1 sweeps towards +x_d, -1 towards -x_d
     cache::Dict{Tuple{Int,NTuple{D,NTuple{3,Float64}}},Vector{ComplexF64}}
 end
 
+"Slice where the fronts meet: the middle for two fronts, the far end of the sweep for one."
+meeting_slice(ctx::SweepContext, ℓ::Int) =
+    ctx.fronts == 2 ? cld(ℓ, 2) : (ctx.dir > 0 ? ℓ : 1)
+
 @inline function snapfreq(ctx::SweepContext, κ2::Real)
-    length(ctx.κsamp) == 1 && return 1
+    (length(ctx.κsamp) == 1 || ctx.step2 <= 0) && return 1     # constant medium: one sample
     return clamp(round(Int, (κ2 - ctx.lo2) / ctx.step2) + 1, 1, length(ctx.κsamp))
 end
 
@@ -209,7 +233,7 @@ function build_slab(ctx::SweepContext{D}, A::SparseMatrixCSC{ComplexF64,Int},
     h = ctx.g.h
     rs = slice_ranges(box[d], ctx.g.b)
     ℓ = length(rs)
-    mid = ctx.fronts == 2 ? cld(ℓ, 2) : ℓ
+    mid = meeting_slice(ctx, ℓ)
     off = offsets(Val(D))
 
     slicebox(r) = ntuple(k -> k == d ? r : box[k], D)
@@ -283,6 +307,8 @@ end
 Approximate twisted block factorisation of `H`.  `levels` is the number of axes
 swept: `1` is the nonrecursive method of §2.3 (each slice factorised directly),
 `2` the recursive method of §3.1 (each slice swept again along the next axis).
+`axis` is the outermost swept axis, signed: `-1` is a one-front sweep towards
+`-x₁`, `2` a sweep along `x₂`.
 """
 struct SweepFactorization{D}
     g::Grid{D}
@@ -292,6 +318,7 @@ struct SweepFactorization{D}
     top::SweptSlab
     nstencil::Int
     levels::Int
+    axis::Int
 end
 
 nslices(F::SweepFactorization) = length(F.ranges)
@@ -311,14 +338,21 @@ end
 leafstats(F::SweepFactorization) = leafstats(F.top)
 
 """
-    sweep_setup(g, ω, m, H; C = 12.0, nsamp = 200, fronts = 2, levels = 1)
+    sweep_setup(g, ω, m, H; C = 12.0, nsamp = 200, fronts = 2, levels = 1, axis = 1)
 
 Build the moving-PML sweeping factorisation of `H` (Algorithm 1, steps 3-8).
 
 `fronts = 2` sweeps from both ends towards a middle slice; `fronts = 1` is the
 plain left-to-right sweep.  `levels = 1` factorises each slice subproblem
-directly; `levels = 2` sweeps it again along `x₂` — the recursive approach of
-§3.1, which only changes anything in 3D, where the subproblems are quasi-2D.
+directly; `levels = 2` sweeps it again along the next axis — the recursive
+approach of §3.1, which only changes anything in 3D, where the subproblems are
+quasi-2D.
+
+`axis` selects the axis the slices are cut along, `1` (the paper's `x₁`) by
+default; `axis = 2` sweeps along `x₂`.  Its sign fixes the direction of a
+one-front sweep: `axis = -1` eliminates from the last slice towards the first.
+Two fronts are symmetric and ignore the sign.  See [`alternating_setup`](@ref)
+for the bi-directional combination of sweeps along different axes.
 
 `nsamp` local-frequency samples are drawn uniformly from
 `[ω²(1-max m), ω²(1-min m)]`; each auxiliary-PML point is assigned the stencil of
@@ -333,9 +367,12 @@ function sweep_setup(
     nsamp::Integer = 200,
     fronts::Integer = 2,
     levels::Integer = 1,
+    axis::Integer = 1,
 ) where {D}
     fronts in (1, 2) || throw(ArgumentError("fronts must be 1 or 2"))
     1 <= levels <= D || throw(ArgumentError("levels must be between 1 and $D"))
+    1 <= abs(axis) <= D || throw(ArgumentError("axis must be ±1, …, ±$D (got $axis)"))
+    a = abs(Int(axis))
 
     mmin, mmax = extrema(m)
     lo2, hi2 = ω^2 * (1 - mmax), ω^2 * (1 - mmin)
@@ -343,7 +380,7 @@ function sweep_setup(
     dκ2 = ns > 1 ? (hi2 - lo2) / (ns - 1) : 0.0
     κsamp = [sqrt(lo2 + (k - 1) * dκ2) for k in 1:ns]
     ctx = SweepContext{D}(g, Float64(ω), Array(m), Float64(C), κsamp, lo2,
-                          ns > 1 ? dκ2 : 1.0, Int(fronts),
+                          ns > 1 ? dκ2 : 1.0, Int(fronts), Int(sign(axis)),
                           Dict{Tuple{Int,NTuple{D,NTuple{3,Float64}}},
                                Vector{ComplexF64}}())
 
@@ -353,10 +390,11 @@ function sweep_setup(
     dσf = ntuple(_ -> gdσ, D)
 
     box = ntuple(_ -> ilo(g):ihi(g), D)
-    top = build_slab(ctx, H, box, collect(1:Int(levels)), dσf)
+    dirs = vcat(a, [d for d in 1:D if d != a])[1:Int(levels)]   # the chosen axis first
+    top = build_slab(ctx, H, box, dirs, dσf)
     top isa SweptSlab || throw(ArgumentError("grid is too small to sweep"))
     return SweepFactorization{D}(g, slice_ranges(g), top.idx, top.mid, top,
-                                 length(ctx.cache), Int(levels))
+                                 length(ctx.cache), Int(levels), Int(axis))
 end
 
 "Apply the approximate solution operator `T̃_[s]` of the outermost sweep."
@@ -366,6 +404,88 @@ apply_T(F::SweepFactorization, s::Int, v::AbstractVector{ComplexF64}) =
 "Approximate solve `H ũ ≈ f` (Algorithm 2)."
 sweep_solve(F::SweepFactorization, f::AbstractVector{ComplexF64}) =
     slab_solve(F.top, f)
+
+"Distinct moving-PML stencils built for a factorisation."
+nstencils(F::SweepFactorization) = F.nstencil
+
+"One sweep, as a pass of an [`AlternatingSweep`](@ref)."
+approx_solve(F::SweepFactorization, f::AbstractVector{ComplexF64}) = sweep_solve(F, f)
+
+# --------------------------------------------------------------------------- #
+# Bi-directional alternation
+# --------------------------------------------------------------------------- #
+
+"""
+    AlternatingSweep
+
+Approximate factorisations applied in turn to the running residual,
+
+    u ← M₁ f,    u ← u + M_k (f − H u)   for k = 2, 3, …
+
+With two layered factorisations along orthogonal axes this is the bi-directional
+preconditioner of Zepeda-Núñez & Zhao (Alg. 2): one pass in horizontal layers,
+one step of iterative refinement, one pass in vertical layers.  With two L-sweep
+factorisations, the second on a checkerboard shifted by half a box, it is the
+same idea for L-sweeps: the residual of an L-sweep lies on the layers either
+side of its box interfaces, and the second board's boxes hold those layers in
+their interiors.  Any mixture works; a pass is whatever `approx_solve` accepts.
+It is a fixed linear operator, `M₁ + M₂ − M₂ H M₁`, so it can precondition plain
+GMRES; each application costs one pass per factorisation plus one sparse matvec
+with `H` per refinement.  Build with [`alternating_setup`](@ref) (layered) or
+directly from factorisations, apply with [`alternating_solve`](@ref).
+"""
+struct AlternatingSweep{D,T}
+    H::SparseMatrixCSC{ComplexF64,Int}
+    F::Vector{T}
+end
+AlternatingSweep{D}(H::SparseMatrixCSC{ComplexF64,Int}, F::Vector{T}) where {D,T} =
+    AlternatingSweep{D,T}(H, F)
+
+dim(::AlternatingSweep{D}) where {D} = D
+nstencils(A::AlternatingSweep) = sum(nstencils, A.F)
+leafstats(A::AlternatingSweep) = (sum(F -> leafstats(F)[1], A.F), maximum(F -> leafstats(F)[2], A.F))
+
+"""
+    alternating_setup(g, ω, m, H; axes = (1, 2), C = 12.0, nsamp = 200, fronts = 2, levels = 1)
+
+Build one [`sweep_setup`](@ref) factorisation per entry of `axes` (each a signed
+axis, see `sweep_setup`) and chain them into an [`AlternatingSweep`](@ref).
+`axes = (1, 2)` is the bi-directional preconditioner of Zepeda-Núñez & Zhao;
+`axes = (1, -1)` with `fronts = 1` alternates the sweep direction on one axis;
+`axes = (1,)` is a plain sweep with a residual-free wrapper.  Setup time and
+memory grow with the number of factorisations.
+"""
+function alternating_setup(
+    g::Grid{D},
+    ω::Real,
+    m::AbstractArray{Float64,D},
+    H::SparseMatrixCSC{ComplexF64,Int};
+    axes = (1, 2),
+    kwargs...,
+) where {D}
+    ax = collect(Int, axes)
+    isempty(ax) && throw(ArgumentError("axes must name at least one sweep axis"))
+    F = [sweep_setup(g, ω, m, H; axis = a, kwargs...) for a in ax]
+    return AlternatingSweep{D}(H, F)
+end
+
+"""
+    alternating_solve(A, f)
+
+`H ũ ≈ f` by the sweeps of `A` in turn, each applied to the residual the
+previous ones left.
+"""
+function alternating_solve(A::AlternatingSweep, f::AbstractVector{ComplexF64})
+    u = approx_solve(A.F[1], f)
+    length(A.F) == 1 && return u
+    e = similar(u)
+    for k in 2:length(A.F)
+        mul!(e, A.H, u)
+        @. e = f - e
+        u .+= approx_solve(A.F[k], e)
+    end
+    return u
+end
 
 "Global unknown indices of the slice `r` (an `x₁` range), ordered `x₁`-fast."
 function collect_slice(g::Grid{D}, r::UnitRange{Int}) where {D}

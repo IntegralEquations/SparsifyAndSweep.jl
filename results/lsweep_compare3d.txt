@@ -1,0 +1,87 @@
+Layered sweep against L-sweeps in three dimensions, with and without inner GMRES
+iterations on the sparse system.  Converging lens, h = lambda/8, b = 4, C = 12,
+GMRES(20) to 1e-6, as in results/tables_3d.txt.  One process per row on a 16-core
+Ryzen 7950X3D (examples/lsweep_compare3d.jl).
+
+  julia --project=. -t 16 examples/lsweep_compare3d.jl 4 --boxes=3 --pad=4 --only=<row>
+  julia --project=. -t 16 examples/lsweep_compare3d.jl 8 --boxes=4 --pad=4 --nfact=8 --only=<row>
+
+L-SWEEPS IN 3D are beams: a q x q Cartesian decomposition of the (x1, x2) plane,
+each box spanning the whole grid along x3, global PML included.  The eight sweep
+directions, the polarized traces and the dataflow are those of the 2D scheme; the
+trace layers are planes and the diagonal trace an L-shaped prism.  Local problems
+are assembled from the stencils with the fitted PML on the four beam sides and the
+global PML along x3.  Compact single-precision factors throughout.
+
+THE PAPER'S 3D SETUP is the same construction -- "beam-shaped quasi-one-dimensional
+local problems", q x q beams with one row per node, p = q -- at a different scale:
+its Table 9 runs q = 12..32 (144..1024 beams) on constant media at 6 points per
+wavelength, 13-point (2-wavelength) boxes and a 1-wavelength PML, 26..69
+wavelengths per side.  Here: 3x3 and 4x4 beams on one node, 18-point (2.25-
+wavelength) boxes, a half-wavelength pad, 4..8 wavelengths per side, in the lens.
+The paper's own cost estimate for 3D factorisation, O(n^3 n_pml^6 / p), is the
+redundancy effect below, and its 3D applications take 52s at N = 156^3 on 12 nodes.
+
+PARALLELISM, as measured.  The layered sweep is untouched: its application runs on
+one core, and its 3D factorisation uses OpenBLAS's default 16 threads inside
+UMFPACK's dense fronts, which are large enough here to matter -- 7.5s of setup with
+one BLAS thread against 5.0s with sixteen at n = 31 (unlike 2D, where they only
+spun).  L-sweeps runs on 16 Julia threads with BLAS pinned to one inside its setup.
+
+"outer" is the iteration count of the outer Krylov solver; "inner" the cap on inner
+GMRES iterations per preconditioner application (0: one sweep per application);
+"inner*outer" the nominal count outer x max(inner, 1); "sweeps" the sweep
+applications actually performed inside the outer solve, warm-up and timing
+applications excluded.  The two differ in both directions.  A left-preconditioned
+GMRES applies its preconditioner to the initial residual and then once per
+iteration, so k iterations cost k + 1 applications: the inner = 0 rows sweep
+outer + 1 times.  With inner iterations the outer solver is flexible GMRES, which
+applies the preconditioner once per iteration, but each application is itself a
+left-preconditioned inner GMRES that stops at 1e-3 after two iterations -- three
+sweeps -- so the inner rows sweep about 3 x outer times, half of inner*outer.
+(An earlier version of this file counted the inner iterations rather than the
+sweeps and reported 6, 5, 6, 6 for the inner rows; the counter now increments at
+the sweep itself.)
+
+omega/2pi = 4, n = 31, Nunk = 41^3 = 68921
+                                   setup     apply    outer  inner  inner*outer  sweeps   solve    relres    peak
+  layered sweep                    4.93s    0.223s      4      0         4          5     1.20s   1.1e-07   2.5GB
+  layered sweep, inner 6           4.97s    0.716s      3      6        18          9     2.21s   1.3e-09   2.4GB
+  L-sweeps 3x3 pad 4              10.54s    0.161s      3      0         3          4     0.74s   6.1e-08   8.2GB
+  L-sweeps 3x3 pad 4, inner 6     12.11s    0.345s      3      6        18          8     1.33s   1.1e-09   8.1GB
+
+omega/2pi = 8, n = 63, Nunk = 73^3 = 389017
+  layered sweep                   28.26s    1.748s      4      0         4          5     8.89s   1.0e-06  13.3GB
+  layered sweep, inner 6          28.87s    5.218s      3      6        18          9    15.97s   4.2e-08  13.4GB
+  L-sweeps 4x4 pad 4, nfact 8    169.90s    1.628s      4      0         4          5     8.36s   2.6e-08  39.9GB
+  L-sweeps 4x4 pad 4, inner 6    162.59s    4.926s      3      6        18          9    15.01s   2.9e-08  40.6GB
+
+READING IT.  Inner iterations do not pay in 3D at these sizes: the outer count is
+already at or next to the exact-H floor of 3 without them, so they only multiply
+the application cost (apply 0.22 -> 0.72s, solve 1.2 -> 2.2s for the layered
+sweep at n = 31; 9 sweeps against 5).  At n = 31 L-sweeps is the better inner solver -- 3 iterations
+against 4, an application 1.4x faster, the solve phase 1.6x faster -- at twice the
+setup and three times the memory.  At n = 63 the picture is the layered sweep's:
+the same 4 iterations, an application only 7% faster, the solve phase within 6%,
+and a setup six times slower at three times the memory.
+
+WHY 3D IS DIFFERENT.  The padded beam is (s + 2(2 + pad))^2 x ntot unknowns for
+s^2 x ntot owned: with s = 16 and pad = 4 that is 3.1x redundancy, against 1.7x
+for the 2D default, and 3D sparse LU cost grows like N^2 rather than N^1.5.  Beams
+of 57 000 unknowns each take about 70s to factorise single-threaded, and only
+eight fit in memory at once (see below), so the setup is two rounds of them.  The
+layered sweep's slabs are 73 x 73 x thin, factorise with 16 BLAS threads, and hold
+one tenth of the fill.  Halving the pad is not available: pad 4 is already half a
+wavelength.  Larger boxes cut the redundancy but leave threads idle (a 3x3 CDD is
+nine factorisations on sixteen cores) and grow each LU.
+
+MEMORY IN FLIGHT.  A factorisation holds about four times its final compact size
+in UMFPACK transients until it is extracted and freed.  With sixteen beams
+factorising at once at n = 63 the process passed 45 GB and was stopped; `nfact`
+caps the factorisations in flight (8 here: peak 39.9 GB, two rounds).  Even so
+L-sweeps peaks at 3x the layered sweep because of the padded redundancy.
+
+A NOTE ON THE OLD 3D TABLE.  results/tables_3d.txt lists the layered sweep at
+112s of setup for n = 63 and 16.7s for n = 31; today's runs of the same code path
+give 28.3s and 4.9s.  The conditions of the old runs were not recorded (BLAS
+thread count, machine load); the numbers above are the ones to compare against.

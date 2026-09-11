@@ -1,0 +1,70 @@
+Thread scaling of the two inner solvers, stage by stage (examples/thread_scaling.jl).
+Converging lens, h = lambda/8, b = 8, boxes of ~64 points with pad 8.  One process
+per thread count, OPENBLAS_NUM_THREADS pinned to the Julia thread count so that a
+-t 1 run cannot quietly use all sixteen cores inside UMFPACK's dense kernels.
+16-core Ryzen 7950X3D.
+
+  for T in 1 4 8 16; do
+    OPENBLAS_NUM_THREADS=$T julia --project=. -t $T examples/thread_scaling.jl 32 64 128 256
+  done
+
+HEADLINE: src/sweep.jl contains no threading constructs at all.  The layered sweep
+is serial in both stages -- its factorization loop over slices is embarrassingly
+parallel and simply is not threaded, and its application is a sequential recurrence.
+It is nonetheless fast because its application does far less work: at omega/2pi=256
+one layered application costs 1.97s on one core against 9.01s for one L-sweeps
+application, a factor of 4.6.  L-sweeps is competitive only because it uses the
+other fifteen cores.
+
+--- layered sweep, factorization (sweep_setup), seconds ---
+ w/2pi      T=1      T=4      T=8     T=16   speedup
+    32     1.61     1.47     1.51     1.57     1.03x
+    64     1.11     1.00     1.02     1.07     1.03x
+   128     4.20     4.19     4.36     4.35     0.96x
+   256    22.57    23.75    23.66    24.25     0.93x
+
+--- layered sweep, one application (sweep_solve), seconds ---
+ w/2pi      T=1      T=4      T=8     T=16   speedup
+    32    0.032    0.032    0.033    0.033     0.97x
+    64    0.127    0.120    0.120    0.121     1.05x
+   128    0.473    0.465    0.486    0.469     1.01x
+   256    1.971    1.955    1.972    2.019     0.98x
+
+--- L-sweeps, factorization (lsweep_setup), seconds ---
+ w/2pi      T=1      T=4      T=8     T=16   speedup
+    32     1.18     1.02     1.00     1.08     1.10x
+    64     1.25     0.60     0.56     0.62     2.00x
+   128     4.73     1.93     1.97     2.05     2.30x
+   256    17.94     6.22     5.20     5.86     3.06x
+
+--- L-sweeps, one application (lsweep_solve), seconds ---
+ w/2pi      T=1      T=4      T=8     T=16   speedup
+    32    0.100    0.032    0.022    0.024     4.17x
+    64    0.493    0.153    0.106    0.077     6.40x
+   128    2.171    0.682    0.451    0.340     6.38x
+   256    9.012    2.803    1.914    1.411     6.39x
+
+--- serial stages common to both, and the dense operator, seconds (T=16) ---
+ w/2pi  stencil        H    dense
+    32    0.488    0.420    0.002
+    64    0.120    0.063    0.009
+   128    0.440    0.246    0.057
+   256    1.632    0.924    0.298
+
+The dense operator is the FFT convolution applied once per GMRES iteration.  The
+package never calls FFTW.set_num_threads, so it is single-threaded by construction
+and its cost is the same at every thread count.
+
+--- head to head on one core, omega/2pi = 256 ---
+                     factorization   one application   total at its iteration count
+  layered sweep           22.57s            1.971s      22.57 +  9 x 1.971 =  40.3s
+  L-sweeps                17.94s            9.012s      17.94 + 14 x 9.012 = 144.1s
+
+On a single core the layered sweep is 3.6x faster end to end.  The entire L-sweeps
+advantage reported elsewhere in this repository is the sixteen cores.
+
+OPPORTUNITY: the slice loop in build_slab (src/sweep.jl) writes only into Alow[s],
+Aup[s], naux[s] and loc[s], so it is independent per slice.  Threading it at the
+3.1x L-sweeps manages would cut the layered factorization at 256 from 24.2s to
+about 7.3s and make the layered sweep the faster method overall, since its solve
+phase is already ahead at that frequency.

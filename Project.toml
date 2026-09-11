@@ -12,8 +12,15 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 
+[weakdeps]
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+
+[extensions]
+SparsifyAndSweepMPIExt = "MPI"
+
 [compat]
 IterativeSolvers = "0.9"
+MPI = "0.20"
 julia = "1.9"
 
 [extras]

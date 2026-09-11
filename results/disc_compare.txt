@@ -1,0 +1,126 @@
+Layered sweep against L-sweeps on a constant-contrast disc, with the Mie series as
+the reference.  The disc has radius R = 1/4 centred at (1/2, 1/2) in the unit
+square -- the unit disc after rescaling lengths by 4, so its size parameter is
+omega R = omega/4 -- velocity c_in = 0.8 inside (index 1.25, m = -0.5625), 1 outside;
+incident field the package's default plane wave e^{i omega x2}; h = lambda/8, b = 8,
+C = 12, GMRES(20) to 1e-6.  One process per row on a 16-core Ryzen 7950X3D
+(examples/disc_compare.jl).  L-sweeps: boxes of ~64 points, compact factors; below
+omega/2pi = 16 that is a single box, i.e. the exact solve of H in single precision.
+
+  julia --project=. -t 16 examples/disc_compare.jl 2 4 8 16 32 64 128 256
+  julia --project=. -t 16 examples/disc_compare.jl 256 --only=direct
+
+The package solves for the scattered field, u_sc + omega^2 K[m u_sc] = -omega^2 K[m u_inc],
+so the Mie error is |u_sc - (u_Mie - e^{i omega x2})| / |u_Mie - e^{i omega x2}| in the
+l2 norm over 20 000 random grid points (all points when n <= 127).  Every row at a
+frequency solves the same discrete system to 1e-6, so the Mie error is the same on
+every row: it is the discretisation error, and it validates the solution rather than
+the preconditioner.
+
+omega/2pi   n      CDD     inner solver              setup    apply  outer  sweeps   fwd   Hmv  t_sweep    t_fwd    t_Hmv     solve   peak
+     2      15     1x1  layered sweep              0.33s   0.000s     4      5      4     0  0.0000s  0.0000s  0.0000s     0.02s  0.5GB
+                        one box (= exact H)        0.09s   0.000s     2      3      2     0  0.0000s  0.0000s  0.0000s     0.02s  0.6GB
+                        one box, inner 6           0.10s   0.001s     2      4      3     2  0.0005s  0.0000s  0.0000s     0.00s  0.6GB
+     4      31     1x1  layered sweep              0.49s   0.001s     6      7      6     0  0.0010s  0.0000s  0.0000s     0.02s  0.5GB
+                        one box (= exact H)        0.11s   0.000s     3      4      3     0  0.0000s  0.0000s  0.0000s     0.02s  0.6GB
+                        one box, inner 6           0.10s   0.001s     3      6      4     3  0.0005s  0.0000s  0.0000s     0.00s  0.6GB
+     8      63     1x1  layered sweep              0.63s   0.003s     9     10      9     0  0.0030s  0.0001s  0.0000s     0.04s  0.6GB
+                        one box (= exact H)        0.13s   0.001s     3      4      3     0  0.0010s  0.0001s  0.0000s     0.02s  0.6GB
+                        one box, inner 6           0.14s   0.003s     3      6      4     3  0.0015s  0.0001s  0.0000s     0.02s  0.6GB
+    16     127     2x2  layered sweep              0.75s   0.009s    12     13     12     0  0.0090s  0.0005s  0.0001s     0.14s  0.6GB
+                        L-sweeps pad 8             0.22s   0.003s    12     13     12     0  0.0030s  0.0005s  0.0001s     0.09s  0.7GB
+                        L-sweeps pad 8, inner 6    0.22s   0.058s     3     24      4    21  0.0073s  0.0005s  0.0001s     0.08s  0.7GB
+    32     255     4x4  exact solve of H           0.47s   0.018s     3      4      3     0   0.018s  0.0021s  0.0005s     0.11s  0.7GB
+                        layered sweep              1.05s   0.039s    16     17     16     0   0.039s  0.0021s  0.0005s     0.62s  0.8GB
+                        L-sweeps pad 8             0.47s   0.011s    19     20     19     0   0.011s  0.0021s  0.0005s     0.40s  1.2GB
+                        L-sweeps pad 8, inner 6    0.48s   0.127s     5     40      6    35   0.016s  0.0021s  0.0005s     0.54s  1.1GB
+    64     511     8x8  exact solve of H           1.60s   0.069s     4      5      4     0   0.069s  0.0092s  0.0029s     0.47s  1.4GB
+                        layered sweep              1.98s   0.136s    34     36     35     0   0.136s  0.0092s  0.0029s     5.38s  1.5GB
+                        L-sweeps pad 8             1.23s   0.066s    32     34     33     0   0.066s  0.0092s  0.0029s     2.72s  1.7GB
+                        L-sweeps pad 8, inner 6    1.20s   0.481s     6     48      7    42   0.060s  0.0092s  0.0029s     3.13s  1.9GB
+   128    1023   16x16  exact solve of H           7.06s   0.304s     5      6      5     0   0.304s   0.055s   0.012s     2.19s  4.4GB
+                        layered sweep              6.30s   0.523s    51     54     53     0   0.523s   0.055s   0.012s    31.50s  4.5GB
+                        L-sweeps pad 8             3.62s   0.312s    53     56     55     0   0.312s   0.055s   0.012s    17.97s  4.3GB
+                        L-sweeps pad 16            5.22s   0.366s    53     56     55     0   0.366s   0.055s   0.012s    22.77s  5.4GB
+                        L-sweeps pad 8, inner 6    3.65s   1.975s     8     64      9    56   0.247s   0.055s   0.012s    16.21s  4.6GB
+   256    2047   32x32  exact solve of H          31.91s   1.264s    10     11     10     0   1.264s   0.308s   0.046s    18.25s 16.6GB
+                        layered sweep             31.40s   2.082s   156    164    163     0   2.082s   0.308s   0.046s   403.49s 16.4GB
+                        L-sweeps pad 8            12.46s   1.100s   328    345    344     0   1.100s   0.308s   0.046s   457.84s 14.6GB
+                        L-sweeps pad 16           16.97s   1.552s   317    333    332     0   1.552s   0.308s   0.046s   566.54s 18.4GB
+                        L-sweeps pad 24           23.72s   1.997s   297    312    311     0   1.997s   0.308s   0.046s   660.11s 23.3GB
+                        L-sweeps pad 8, inner 6   12.40s   7.673s    22    176     24   154   0.959s   0.308s   0.046s   177.83s 18.3GB
+
+COLUMNS.  Every one is measured.
+  omega/2pi  frequency; the grid is n = 8(omega/2pi) - 1 at eight points per
+             wavelength, and the disc is omega/(4 pi) wavelengths across
+  n, CDD     grid points per side, and the L-sweeps box decomposition
+  inner solver  the approximate inverse of H the preconditioner uses; "inner 6"
+             runs up to six GMRES iterations on H per application, to 1e-3, in
+             place of a single sweep
+  setup      building the preconditioner: sparsification, H, the factorisation
+  apply      one preconditioner application, timed once: S r, the inner solve,
+             and the scatter back to the physical points
+  outer      iterations of the outer Krylov solver on the dense system
+  sweeps     preconditioner applications performed inside that solve; LU solves
+             on the exact-H row
+  fwd        forward maps: applications of A = I + omega^2 K[m .], each an FFT
+             convolution on the padded grid
+  Hmv        applications -- not solves -- of the sparsified operator H, one per
+             inner GMRES iteration; only the two-level rows perform any
+  t_sweep    the cost of one sweep: `apply` divided by the sweeps that
+             application performs, one for the single-level rows and eight for
+             the two-level rows from omega/2pi = 16 up.  It carries S r and the
+             scatter with it, 0.050s of 1.100 at n = 2047
+  t_fwd      the cost of one forward map
+  t_Hmv      the cost of one matvec with H.  This and t_fwd depend on the grid
+             alone -- not on the medium, not on the preconditioner -- so one
+             measurement per size serves every row (disc_compare.jl
+             --costs-only); t_Hmv is already inside the two-level rows' t_sweep
+  solve      the outer Krylov solve, setup excluded
+  relres     true relative residual ||A u - b|| / ||b|| after the solve
+  peak       peak resident set of the process
+
+THE COUNTS follow the solvers' schedule.  A left-preconditioned GMRES(20) applies
+operator and preconditioner once per iteration and once more at every restart,
+plus one preconditioner application on the initial residual, so the single-level
+rows have fwd = outer + r and sweeps = outer + 1 + r with r = floor((outer-1)/20)
+restarts, and the two-level rows have Hmv = sweeps - outer.  Only the two-level
+sweep counts cannot be derived: each application runs an inner GMRES that stops
+at 1e-3 or its cap of six, two sweeps per application at omega/2pi <= 8 and eight
+from 16 upward.  At n = 2047 a forward map costs 6.6 times an H matvec, 0.308s
+against 0.046s, and that ratio is the whole reason the two-level scheme pays.
+
+READING THE ITERATIONS.  The exact solve of H needs 3, 4, 5, 10 iterations at
+omega/2pi = 32..256: the sparsification's own floor is modest, and only about twice
+the lens's 3.  Everything above it is the inexactness of the sweeps on a medium
+that reflects.  The lens is smooth and reflects weakly, so one sweep pass --
+layered or L-shaped -- captures almost the whole field and the counts stay at 9
+and 14 at 256; the disc's interface sends waves back, and each pass captures one
+more reflection, so the layered sweep needs 156 and the L-sweep 328.  It is not
+the absorber: a three-wavelength pad takes the L-sweep count only from 328 to 297
+while doubling the application cost, where on the lens it took 14 to 8.  The
+restarts are a real cost at these counts: 328 iterations of GMRES(20) carry
+sixteen restarts, each an extra forward map and an extra sweep.
+
+WHAT THE WORK COLUMNS SHOW.  The two-level scheme wins at 256 without doing fewer
+sweeps -- it does 176 against the layered sweep's 164 -- but its sweeps are
+L-sweeps at about 0.96s each rather than layered sweeps at 2.08s, and it cuts the
+forward maps from 163 to 24.  Against single-level L-sweeps the gain is plainer
+still: 176 sweeps against 345 and 24 forward maps against 344.  What the inner
+iterations buy is that most of the work moves onto the sparse system H, where an
+iteration costs a sweep and a sparse matvec, and off the dense system, where an
+iteration costs a forward map plus Krylov orthogonalisation against a basis of
+4.2-million-entry vectors.  The exact-H row is the limit of that trade: ten
+forward maps, eleven LU solves, 18s.
+
+ACCOUNTING.  sweeps x t_sweep + fwd x t_fwd should be most of the solve time, the
+rest being the Krylov orthogonalisation.  At omega/2pi = 256 it accounts for 392s
+of the layered sweep's 403s, 176s of the two-level scheme's 178s and 17.0s of the
+exact solve's 18.3s -- within a few percent.  For the single-level L-sweeps rows
+it overshoots, 486s against 458s at pad 8 and 619s against 567s at pad 16, which
+says the single timed application those rows report is about 8 percent pessimistic
+relative to the same sweep run back to back inside the solve; the counts and the
+solve times are unaffected.
+
+  time to solution at omega/2pi = 256:  exact H 50s;  L-sweeps inner 6 190s;
+  layered 435s;  L-sweeps pad 8 470s;  pad 16 584s;  pad 24 684s.

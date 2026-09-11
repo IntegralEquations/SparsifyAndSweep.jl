@@ -1,0 +1,46 @@
+Does pinning each box's nine component solves to one thread speed up the L-sweeps
+application?  omega/2pi = 256 (n = 2047), 1024 boxes, pad 8, 16 threads on a
+16-core Ryzen 7950X3D.  Best of three applications; "cores busy" is CPU seconds
+over wall seconds from /proc.
+
+The :affinity scheduler was removed once this measurement was in, since it only
+hurt; commit 2cffa93 holds the version of lsweep_solve and of the test script that
+produced the table below.  The calibration half of that script -- factor traffic
+against DRAM bandwidth -- lives on as examples/bandwidth_test.jl.
+
+configuration                              apply     cores busy
+shared queue, tasks migrate (default)     1.401s       14.6
+affinity queues, sticky tasks             1.425s       13.4
+shared queue, JULIA_EXCLUSIVE=1           1.394s       14.6
+affinity queues, JULIA_EXCLUSIVE=1        1.478s       11.9
+all four give bitwise identical results.
+
+VERDICT: refuted.  Affinity is 2-6% slower; its lower occupancy is workers idling
+on their own queues, so it costs load balance and buys nothing.  Pinning OS threads
+to cores on its own changes nothing.
+
+WHY, from the calibration in the same run:
+  factors                       9.4 GB of L and U over 1024 boxes (24 B per nonzero)
+  one application streams      81.5 GB   (each of 8836 nodes reads its box's factors once)
+  implied rate during apply    58 GB/s   (81.5 GB / 1.40 s)
+  measured DRAM read bandwidth 51 GB/s on 16 threads, 43-46 GB/s on one thread
+
+The application runs at the memory-bandwidth ceiling.  Cache locality cannot help,
+because a box's components are separated in time by ~1 GB of other boxes' factor
+traffic against a 96 MB L3.  And more threads cannot help either.
+
+Note the single-thread numbers: one core can read at 43 GB/s, yet the serial
+application moves only 81.5 GB / 9.0 s = 9 GB/s.  Serially the triangular solves
+are latency-bound -- dependent, indirectly indexed loads with little memory-level
+parallelism -- and sixteen such streams aggregate to the bandwidth wall.  That is
+the whole account of the 6.4x speedup ceiling and the 2.3x CPU inflation measured
+in results/thread_scaling.txt and results/cpu_usage.txt, and of the application
+time being flat across threads-vs-ranks mixtures on one node in
+results/lsweep_mpi_scaling.txt: same DRAM either way.
+
+WHAT WOULD HELP is fewer bytes per application, not better scheduling:
+  - single-precision factors would halve the traffic;
+  - a smaller pad or larger boxes would cut the 1.7x redundancy of padded boxes;
+  - more memory channels -- a server node, or distribution across nodes, where
+    aggregate bandwidth scales with the node count.  That is the regime the paper
+    targets, and it is why O(N/p) is stated for p ranks rather than p threads.

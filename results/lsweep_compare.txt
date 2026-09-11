@@ -1,0 +1,38 @@
+All L-sweeps rows below omega/2pi = 256's second block use UMFPACK factors, the
+default at the time.  The default is now the compact single-precision factors
+(results/compact_factors.txt); rows marked "compact" were measured with them.
+
+ω/2π = 32, n = 255, N = 65025, threads = 16, CDD 4x4 boxes of ~64 points
+  layered sweep              setup    1.07s  apply   0.033s  iters   5  solve    0.26s  relres 6.6e-08
+  L-sweeps pad 8             setup    0.33s  apply   0.046s  iters   4  solve    0.14s  relres 6.6e-08
+  L-sweeps pad 16            setup    0.40s  apply   0.032s  iters   4  solve    0.17s  relres 2.8e-08
+  L-sweeps pad 8, inner 6    setup    0.26s  apply   0.071s  iters   3  solve    0.26s  relres 3.1e-09
+ω/2π = 64, n = 511, N = 261121, threads = 16, CDD 8x8 boxes of ~64 points
+  layered sweep              setup    1.38s  apply   0.129s  iters   6  solve    1.05s  relres 2.1e-08
+  L-sweeps pad 8             setup    0.95s  apply   0.087s  iters   5  solve    0.65s  relres 1.9e-08
+  L-sweeps pad 16            setup    1.37s  apply   0.123s  iters   5  solve    0.87s  relres 5.8e-09
+  L-sweeps pad 8, inner 6    setup    0.85s  apply   0.375s  iters   3  solve    1.10s  relres 5.0e-09
+ω/2π = 128, n = 1023, N = 1046529, threads = 16, CDD 16x16 boxes of ~64 points
+  layered sweep              setup    5.33s  apply   0.526s  iters   7  solve    4.71s  relres 7.7e-09
+  L-sweeps pad 8             setup    2.99s  apply   0.374s  iters   7  solve    3.58s  relres 4.0e-08
+  L-sweeps pad 16            setup    4.70s  apply   0.574s  iters   6  solve    4.21s  relres 4.1e-08
+  L-sweeps pad 8, inner 6    setup    3.10s  apply   1.526s  iters   3  solve    4.84s  relres 2.0e-08
+ω/2π = 256, n = 2047, N = 4190209, threads = 16, CDD 32x32 boxes of ~64 points
+  (one row per process, so the peak resident set belongs to that row alone)
+  layered sweep              setup   29.36s  apply   2.059s  iters   9  solve   23.99s  relres 2.1e-08  peak  15.1GB
+  L-sweeps pad 8             setup   11.10s  apply   1.554s  iters  14  solve   28.34s  relres 3.0e-08  peak  20.5GB
+  L-sweeps pad 16            setup   15.36s  apply   2.239s  iters  10  solve   27.95s  relres 7.1e-09  peak  27.0GB
+  L-sweeps pad 24            setup   22.53s  apply   3.042s  iters   8  solve   29.70s  relres 9.0e-09  peak  34.9GB
+  L-sweeps pad 8, inner 6    setup   11.14s  apply   9.245s  iters   3  solve   27.98s  relres 5.9e-08  peak  20.5GB
+
+ω/2π = 256, same problem, after the setup hygiene (BLAS pinned, direct CSC assembly)
+and with the compact single-precision factors, one row per process:
+  L-sweeps pad 8, umfpack        setup   10.27s  apply   1.563s  iters  14  solve   28.61s  relres 3.0e-08  peak  20.4GB
+  L-sweeps pad 8, compact        setup   12.13s  apply   1.089s  iters  14  solve   19.44s  relres 3.0e-08  peak  14.5GB
+  L-sweeps pad 16, compact       setup   16.82s  apply   1.472s  iters  10  solve   18.36s  relres 7.2e-09  peak  18.2GB
+  L-sweeps pad 16, 128-pt, compact setup 17.93s  apply   1.069s  iters  10  solve   14.85s  relres 1.2e-08  peak  15.8GB
+  (box-size study without compact factors: results/lsweep_boxsize.txt)
+
+ω/2π = 512, n = 4095, N = 16769025: does not fit on this 61 GB machine.  Both the
+layered sweep and L-sweeps pad 8 were stopped by a 40 GB watchdog during setup.
+Extrapolating the 256 peaks by the 4x growth in N puts them near 65 GB and 82 GB.

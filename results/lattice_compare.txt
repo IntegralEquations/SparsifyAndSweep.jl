@@ -1,0 +1,361 @@
+Four discs in a square lattice against the single moving-PML sweep and the
+bi-directional alternation of Zepeda-Núñez & Zhao (SIAM J. Sci. Comput. 38 (2016)
+B866-B888, Alg. 2: sweep along x1, form the residual, sweep it along x2, add), on
+the sparsified Lippmann-Schwinger system of Liu & Ying (examples/lattice_compare.jl).
+
+Discs of radius R = 0.15 centred at (1/2 +- 0.2, 1/2 +- 0.2) in the unit square,
+m = m_in inside with a sharp edge (m_in = -1 is n^2 = 2, c_in = 1/sqrt 2; m_in = -3 is
+n^2 = 4), 0 outside.  h = lambda/ppw in the background, lambda/(ppw/sqrt(1-m_in)) inside
+the discs; b = 8, C = 12, GMRES(60) to 1e-6 (flexible GMRES for the two-level rows).
+One process with 8 threads (4 or 6 for the variant runs) on a 16-core Ryzen 7950X3D;
+the sweep itself is serial, so the thread count only touches the setup.
+
+  julia --project=. -t 8 examples/lattice_compare.jl 8 16 32 64 128
+  julia --project=. -t 4 examples/lattice_compare.jl 32 64 --dir=1,1 --only=direct,x1,x2,alt,bidir,x1i6,bidiri6
+  julia --project=. -t 4 examples/lattice_compare.jl 32 64 --dir=1,0 --only=direct,x1,x2,bidir
+  julia --project=. -t 4 examples/lattice_compare.jl 32 64 --m=-3 --only=direct,x1,x2,alt,bidir,x1i6,bidiri6
+  julia --project=. -t 6 examples/lattice_compare.jl 16 32 --m=-3 --ppw=16 --only=direct,x1,x2,alt,bidir,x1i6,bidiri6
+  julia --project=. -t 6 examples/lattice_compare.jl 32 --ppw=16 --only=direct,x1,x2,bidir,x1i6,bidiri6
+
+COLUMNS.  setup: sparsification, H and the factorisation(s) -- two of them for an
+alternating row; apply: one preconditioner application, timed once; outer: iterations
+of the Krylov solver on the dense system, "!" if it hit the cap of 300; sweeps: slab
+sweeps performed inside that solve (an alternating application performs one per axis;
+LU solves on the exact-H row); fwd: dense forward maps; solve: the Krylov solve,
+setup excluded; relres: true relative residual of the dense system; vs direct:
+distance of the row's solution from the exact-H row's, relative; peak: resident set.
+
+ROWS.  "x1 sweep, two fronts" is the package default; "x2" the same slices cut along
+x2; "one front" the plain left-to-right sweep; "x1 then -x1" two one-front sweeps in
+opposite directions on the same axis, the second applied to the residual of the first;
+"bi-directional x1,x2" Alg. 2 of Zepeda-Núñez & Zhao; "x1,x2,x1" a third pass; "inner k"
+GMRES on H to 1e-3, at most k iterations, inside every application (their Alg. 3
+when combined with the bi-directional row).
+
+NOTE on the m_in = -3 runs at ppw = 8: these have 4 points per wavelength inside the
+discs and are kept only to show what under-resolution does to the sweeps; the
+ppw = 16 runs (8 inside) are the ones to read.  The headers of the raw output below
+were printed by an earlier version of the script that inverted the interior
+resolution; they have been corrected by hand (5.7 and 4.0 inside at ppw = 8).
+
+=================== m_in = -1, ppw = 8, incidence along x2 (main table; the two inner-12 rows at 128 come from a separate run of --only=direct,x1i12,bidiri12)
+ω/2π = 8, n = 63 (8 ppw outside, 5.7 inside), N = 3969, 8 slices; 4 discs R = 0.15 (2.4 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup    0.08s  apply   0.001s  outer   3   sweeps    4  fwd    3  solve    0.04s  relres 3.0e-08  vs direct NaN  peak   0.6GB
+  x₁ sweep, two fronts                 setup    0.73s  apply   0.002s  outer  13   sweeps   14  fwd   13  solve    0.02s  relres 1.2e-07  vs direct 6.3e-07  peak   0.6GB
+  x₂ sweep, two fronts                 setup    0.72s  apply   0.005s  outer  11   sweeps   12  fwd   11  solve    0.04s  relres 2.5e-07  vs direct 9.1e-07  peak   0.6GB
+  x₁ sweep, one front                  setup    0.13s  apply   0.002s  outer  13   sweeps   14  fwd   13  solve    0.04s  relres 1.6e-07  vs direct 7.4e-07  peak   0.6GB
+  x₁ then −x₁, one front               setup    0.12s  apply   0.004s  outer   8   sweeps   18  fwd    8  solve    0.06s  relres 2.6e-07  vs direct 1.1e-06  peak   0.6GB
+  bi-directional x₁,x₂, two fronts     setup    0.14s  apply   0.005s  outer   8   sweeps   18  fwd    8  solve    0.06s  relres 7.1e-08  vs direct 2.8e-07  peak   0.6GB
+  bi-directional x₁,x₂, one front      setup    0.20s  apply   0.004s  outer   8   sweeps   18  fwd    8  solve    0.04s  relres 4.4e-08  vs direct 1.9e-07  peak   0.6GB
+  x₁,x₂,x₁, two fronts                 setup    0.65s  apply   0.009s  outer   6   sweeps   21  fwd    6  solve    0.16s  relres 3.5e-08  vs direct 2.1e-07  peak   0.6GB
+  x₁ two fronts, inner 6               setup    0.11s  apply   0.023s  outer   3   sweeps   24  fwd    4  solve    0.08s  relres 2.6e-08  vs direct 1.7e-07  peak   0.7GB
+  bi-directional, inner 6              setup    0.17s  apply   0.031s  outer   3   sweeps   34  fwd    4  solve    0.13s  relres 1.9e-08  vs direct 8.9e-08  peak   0.7GB
+  x₁ two fronts, inner 12              setup    0.42s  apply   0.031s  outer   3   sweeps   24  fwd    4  solve    0.10s  relres 1.9e-08  vs direct 8.9e-08  peak   0.7GB
+  bi-directional, inner 12             setup    0.19s  apply   0.048s  outer   3   sweeps   34  fwd    4  solve    0.13s  relres 1.9e-08  vs direct 8.9e-08  peak   0.7GB
+ω/2π = 16, n = 127 (8 ppw outside, 5.7 inside), N = 16129, 16 slices; 4 discs R = 0.15 (4.8 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup    0.17s  apply   0.006s  outer   4   sweeps    5  fwd    4  solve    0.04s  relres 2.1e-09  vs direct NaN  peak   0.7GB
+  x₁ sweep, two fronts                 setup    0.34s  apply   0.016s  outer  22   sweeps   23  fwd   22  solve    0.47s  relres 8.9e-08  vs direct 1.7e-06  peak   0.7GB
+  x₂ sweep, two fronts                 setup    0.33s  apply   0.014s  outer  16   sweeps   17  fwd   16  solve    0.30s  relres 1.1e-07  vs direct 1.2e-06  peak   0.7GB
+  x₁ sweep, one front                  setup    0.35s  apply   0.014s  outer  21   sweeps   22  fwd   21  solve    0.38s  relres 1.7e-07  vs direct 2.3e-06  peak   0.7GB
+  x₁ then −x₁, one front               setup    0.50s  apply   0.038s  outer  15   sweeps   32  fwd   15  solve    0.71s  relres 9.6e-08  vs direct 9.5e-07  peak   0.7GB
+  bi-directional x₁,x₂, two fronts     setup    0.42s  apply   0.028s  outer  13   sweeps   28  fwd   13  solve    0.32s  relres 4.6e-08  vs direct 5.2e-07  peak   0.8GB
+  bi-directional x₁,x₂, one front      setup    0.24s  apply   0.015s  outer  12   sweeps   26  fwd   12  solve    0.27s  relres 8.7e-08  vs direct 9.8e-07  peak   0.8GB
+  x₁,x₂,x₁, two fronts                 setup    0.41s  apply   0.025s  outer  10   sweeps   33  fwd   10  solve    0.32s  relres 2.9e-08  vs direct 3.3e-07  peak   0.8GB
+  x₁ two fronts, inner 6               setup    0.14s  apply   0.068s  outer   4   sweeps   32  fwd    5  solve    0.31s  relres 3.6e-07  vs direct 8.2e-06  peak   0.9GB
+  bi-directional, inner 6              setup    0.29s  apply   0.116s  outer   3   sweeps   44  fwd    4  solve    0.42s  relres 7.2e-08  vs direct 4.7e-06  peak   0.9GB
+  x₁ two fronts, inner 12              setup    0.15s  apply   0.156s  outer   3   sweeps   40  fwd    4  solve    0.40s  relres 8.6e-08  vs direct 6.4e-06  peak   0.9GB
+  bi-directional, inner 12             setup    0.29s  apply   0.124s  outer   3   sweeps   44  fwd    4  solve    0.50s  relres 6.9e-08  vs direct 4.7e-06  peak   0.9GB
+ω/2π = 32, n = 255 (8 ppw outside, 5.7 inside), N = 65025, 32 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup    1.07s  apply   0.041s  outer   4   sweeps    5  fwd    4  solve    0.29s  relres 3.7e-09  vs direct NaN  peak   0.9GB
+  x₁ sweep, two fronts                 setup    1.45s  apply   0.081s  outer  27   sweeps   28  fwd   27  solve    3.47s  relres 7.6e-08  vs direct 1.4e-06  peak   1.0GB
+  x₂ sweep, two fronts                 setup    1.22s  apply   0.082s  outer  21   sweeps   22  fwd   21  solve    2.37s  relres 6.4e-08  vs direct 1.2e-06  peak   1.0GB
+  x₁ sweep, one front                  setup    1.33s  apply   0.079s  outer  27   sweeps   28  fwd   27  solve    3.17s  relres 6.9e-08  vs direct 1.4e-06  peak   1.0GB
+  x₁ then −x₁, one front               setup    2.12s  apply   0.146s  outer  19   sweeps   40  fwd   19  solve    3.80s  relres 7.0e-08  vs direct 9.3e-07  peak   1.2GB
+  bi-directional x₁,x₂, two fronts     setup    1.89s  apply   0.146s  outer  19   sweeps   40  fwd   19  solve    3.63s  relres 4.3e-08  vs direct 7.7e-07  peak   1.2GB
+  bi-directional x₁,x₂, one front      setup    1.89s  apply   0.139s  outer  19   sweeps   40  fwd   19  solve    3.61s  relres 2.6e-08  vs direct 6.0e-07  peak   1.2GB
+  x₁,x₂,x₁, two fronts                 setup    3.02s  apply   0.201s  outer  14   sweeps   45  fwd   14  solve    3.66s  relres 1.5e-08  vs direct 2.7e-07  peak   1.3GB
+  x₁ two fronts, inner 6               setup    1.13s  apply   0.647s  outer   5   sweeps   40  fwd    6  solve    3.62s  relres 4.6e-07  vs direct 1.3e-05  peak   1.3GB
+  bi-directional, inner 6              setup    1.87s  apply   1.452s  outer   3   sweeps   48  fwd    4  solve    4.14s  relres 7.0e-07  vs direct 2.2e-05  peak   1.3GB
+  x₁ two fronts, inner 12              setup    1.19s  apply   1.433s  outer   3   sweeps   42  fwd    4  solve    3.91s  relres 9.3e-08  vs direct 5.2e-06  peak   1.3GB
+  bi-directional, inner 12             setup    2.12s  apply   1.573s  outer   3   sweeps   60  fwd    4  solve    5.69s  relres 3.3e-08  vs direct 3.6e-06  peak   1.3GB
+ω/2π = 64, n = 511 (8 ppw outside, 5.7 inside), N = 261121, 64 slices; 4 discs R = 0.15 (19.2 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup    6.37s  apply   0.180s  outer   5   sweeps    6  fwd    5  solve    2.03s  relres 1.7e-08  vs direct NaN  peak   1.6GB
+  x₁ sweep, two fronts                 setup    5.54s  apply   0.342s  outer  38   sweeps   39  fwd   38  solve   19.71s  relres 3.7e-08  vs direct 2.0e-06  peak   1.8GB
+  x₂ sweep, two fronts                 setup    4.33s  apply   0.313s  outer  31   sweeps   32  fwd   31  solve   16.21s  relres 5.6e-08  vs direct 1.1e-06  peak   1.8GB
+  x₁ sweep, one front                  setup    5.05s  apply   0.423s  outer  38   sweeps   39  fwd   38  solve   23.24s  relres 4.8e-08  vs direct 2.2e-06  peak   1.8GB
+  x₁ then −x₁, one front               setup    8.39s  apply   0.596s  outer  22   sweeps   46  fwd   22  solve   16.77s  relres 4.1e-08  vs direct 1.8e-06  peak   2.4GB
+  bi-directional x₁,x₂, two fronts     setup    8.00s  apply   0.584s  outer  21   sweeps   44  fwd   21  solve   17.90s  relres 4.7e-08  vs direct 2.1e-06  peak   2.4GB
+  bi-directional x₁,x₂, one front      setup    7.78s  apply   0.578s  outer  22   sweeps   46  fwd   22  solve   16.81s  relres 8.2e-08  vs direct 2.0e-06  peak   2.4GB
+  x₁,x₂,x₁, two fronts                 setup   10.27s  apply   0.844s  outer  20   sweeps   63  fwd   20  solve   22.45s  relres 8.3e-08  vs direct 1.3e-06  peak   2.9GB
+  x₁ two fronts, inner 6               setup    4.15s  apply   2.709s  outer   7   sweeps   56  fwd    8  solve   20.77s  relres 2.3e-07  vs direct 1.9e-05  peak   3.0GB
+  bi-directional, inner 6              setup    8.23s  apply   6.045s  outer   4   sweeps   64  fwd    5  solve   25.95s  relres 1.8e-07  vs direct 6.1e-05  peak   3.0GB
+  x₁ two fronts, inner 12              setup    5.81s  apply   5.556s  outer   4   sweeps   56  fwd    5  solve   21.20s  relres 2.8e-07  vs direct 9.5e-05  peak   3.0GB
+  bi-directional, inner 12             setup    8.70s  apply   7.431s  outer   3   sweeps   68  fwd    4  solve   25.14s  relres 1.8e-07  vs direct 6.1e-04  peak   3.0GB
+ω/2π = 128, n = 1023 (8 ppw outside, 5.7 inside), N = 1046529, 128 slices; 4 discs R = 0.15 (38.4 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup   11.00s  apply   0.327s  outer  14   sweeps   15  fwd   14  solve   15.16s  relres 6.3e-09  vs direct NaN  peak   4.8GB
+  x₁ sweep, two fronts                 setup   21.38s  apply   1.368s  outer 160   sweeps  163  fwd  162  solve  305.17s  relres 2.0e-08  vs direct 2.3e-05  peak   5.4GB
+  x₂ sweep, two fronts                 setup   26.67s  apply   1.422s  outer 112   sweeps  114  fwd  113  solve  203.52s  relres 1.3e-08  vs direct 1.9e-05  peak   5.7GB
+  x₁ sweep, one front                  setup   19.56s  apply   1.089s  outer 160   sweeps  163  fwd  162  solve  298.62s  relres 2.2e-08  vs direct 2.4e-05  peak   5.7GB
+  x₁ then −x₁, one front               setup   34.56s  apply   2.447s  outer  99   sweeps  202  fwd  100  solve  293.79s  relres 3.0e-08  vs direct 2.5e-05  peak   7.2GB
+  bi-directional x₁,x₂, two fronts     setup   28.14s  apply   2.380s  outer  94   sweeps  192  fwd   95  solve  276.21s  relres 2.1e-08  vs direct 2.5e-05  peak   7.7GB
+  bi-directional x₁,x₂, one front      setup   28.13s  apply   2.271s  outer 105   sweeps  214  fwd  106  solve  302.08s  relres 2.4e-08  vs direct 1.7e-05  peak   7.9GB
+  x₁,x₂,x₁, two fronts                 setup   40.22s  apply   3.560s  outer  86   sweeps  264  fwd   87  solve  343.87s  relres 3.6e-08  vs direct 6.8e-06  peak   9.6GB
+  x₁ two fronts, inner 6               setup   16.17s  apply   9.664s  outer  24   sweeps  192  fwd   25  solve  243.65s  relres 7.8e-07  vs direct 8.3e-04  peak  10.5GB
+  bi-directional, inner 6              setup   26.92s  apply  18.302s  outer  14   sweeps  224  fwd   15  solve  264.57s  relres 9.3e-07  vs direct 2.3e-03  peak  10.5GB
+  x₁ two fronts, inner 12              setup   18.58s  apply  16.582s  outer  23   sweeps  322  fwd   24  solve  335.19s  relres 5.2e-07  vs direct 9.5e-04  peak   5.5GB
+  bi-directional, inner 12             setup   16.50s  apply  17.150s  outer  19   sweeps  532  fwd   20  solve  339.03s  relres 8.8e-07  vs direct 1.3e-02  peak   7.1GB
+
+=================== m_in = -1, ppw = 8, incidence at 45 degrees
+ω/2π = 32, n = 255 (8 ppw outside, 5.7 inside), N = 65025, 32 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.71, 0.71), GMRES(60) to 1e-06, threads = 4
+  exact solve of H                     setup    2.00s  apply   0.047s  outer   4   sweeps    5  fwd    4  solve    0.53s  relres 2.8e-09  vs direct NaN  peak   0.9GB
+  x₁ sweep, two fronts                 setup    3.95s  apply   0.102s  outer  27   sweeps   28  fwd   27  solve    4.07s  relres 1.1e-07  vs direct 1.4e-06  peak   1.0GB
+  x₂ sweep, two fronts                 setup    4.22s  apply   0.106s  outer  27   sweeps   28  fwd   27  solve    3.74s  relres 1.1e-07  vs direct 1.4e-06  peak   1.0GB
+  x₁ then −x₁, one front               setup    2.90s  apply   0.172s  outer  19   sweeps   40  fwd   19  solve    5.28s  relres 7.4e-08  vs direct 9.3e-07  peak   1.2GB
+  bi-directional x₁,x₂, two fronts     setup    2.83s  apply   0.170s  outer  19   sweeps   40  fwd   19  solve    4.35s  relres 4.5e-08  vs direct 6.7e-07  peak   1.3GB
+  x₁ two fronts, inner 6               setup    1.57s  apply   0.693s  outer   5   sweeps   40  fwd    6  solve    4.36s  relres 5.8e-07  vs direct 1.3e-05  peak   1.3GB
+  bi-directional, inner 6              setup    2.54s  apply   1.699s  outer   3   sweeps   48  fwd    4  solve    5.58s  relres 9.3e-07  vs direct 2.3e-05  peak   1.3GB
+ω/2π = 64, n = 511 (8 ppw outside, 5.7 inside), N = 261121, 64 slices; 4 discs R = 0.15 (19.2 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.71, 0.71), GMRES(60) to 1e-06, threads = 4
+  exact solve of H                     setup    5.53s  apply   0.207s  outer   5   sweeps    6  fwd    5  solve    1.85s  relres 2.9e-08  vs direct NaN  peak   1.7GB
+  x₁ sweep, two fronts                 setup    5.54s  apply   0.301s  outer  38   sweeps   39  fwd   38  solve   19.32s  relres 4.1e-08  vs direct 1.6e-06  peak   1.9GB
+  x₂ sweep, two fronts                 setup    4.71s  apply   0.314s  outer  38   sweeps   39  fwd   38  solve   17.57s  relres 4.1e-08  vs direct 1.6e-06  peak   1.9GB
+  x₁ then −x₁, one front               setup    7.16s  apply   0.611s  outer  21   sweeps   44  fwd   21  solve   15.62s  relres 3.8e-08  vs direct 1.3e-06  peak   2.4GB
+  bi-directional x₁,x₂, two fronts     setup    7.00s  apply   0.569s  outer  20   sweeps   42  fwd   20  solve   15.62s  relres 5.8e-08  vs direct 1.9e-06  peak   2.5GB
+  x₁ two fronts, inner 6               setup    4.19s  apply   2.394s  outer   6   sweeps   48  fwd    7  solve   16.11s  relres 6.6e-07  vs direct 4.3e-05  peak   2.5GB
+  bi-directional, inner 6              setup    6.61s  apply   4.643s  outer   4   sweeps   64  fwd    5  solve   20.53s  relres 1.5e-07  vs direct 4.2e-05  peak   2.5GB
+
+=================== m_in = -1, ppw = 8, incidence along x1
+ω/2π = 32, n = 255 (8 ppw outside, 5.7 inside), N = 65025, 32 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (1.00, 0.00), GMRES(60) to 1e-06, threads = 4
+  exact solve of H                     setup    2.20s  apply   0.047s  outer   4   sweeps    5  fwd    4  solve    0.50s  relres 3.7e-09  vs direct NaN  peak   0.9GB
+  x₁ sweep, two fronts                 setup    3.27s  apply   0.079s  outer  21   sweeps   22  fwd   21  solve    2.60s  relres 6.4e-08  vs direct 1.2e-06  peak   0.9GB
+  x₂ sweep, two fronts                 setup    2.59s  apply   0.067s  outer  27   sweeps   28  fwd   27  solve    2.96s  relres 7.6e-08  vs direct 1.4e-06  peak   1.0GB
+  bi-directional x₁,x₂, two fronts     setup    2.38s  apply   0.190s  outer  19   sweeps   40  fwd   19  solve    4.86s  relres 4.3e-08  vs direct 5.2e-07  peak   1.2GB
+ω/2π = 64, n = 511 (8 ppw outside, 5.7 inside), N = 261121, 64 slices; 4 discs R = 0.15 (19.2 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (1.00, 0.00), GMRES(60) to 1e-06, threads = 4
+  exact solve of H                     setup    5.12s  apply   0.194s  outer   5   sweeps    6  fwd    5  solve    1.65s  relres 1.7e-08  vs direct NaN  peak   1.7GB
+  x₁ sweep, two fronts                 setup    4.57s  apply   0.338s  outer  31   sweeps   32  fwd   31  solve   13.14s  relres 5.6e-08  vs direct 1.1e-06  peak   1.9GB
+  x₂ sweep, two fronts                 setup    3.87s  apply   0.341s  outer  38   sweeps   39  fwd   38  solve   17.36s  relres 3.7e-08  vs direct 2.0e-06  peak   2.0GB
+  bi-directional x₁,x₂, two fronts     setup    7.67s  apply   0.652s  outer  20   sweeps   42  fwd   20  solve   16.57s  relres 3.1e-08  vs direct 1.5e-06  peak   2.4GB
+
+=================== m_in = -3, ppw = 16 (8 inside)
+ω/2π = 16, n = 255 (16 ppw outside, 8.0 inside), N = 65025, 32 slices; 4 discs R = 0.15 (4.8 λ across) at (½±0.20, ½±0.20), m_in = -3.00 (n² = 4.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    1.49s  apply   0.033s  outer   4   sweeps    5  fwd    4  solve    0.32s  relres 1.5e-07  vs direct NaN  peak   0.9GB
+  x₁ sweep, two fronts                 setup    2.71s  apply   0.059s  outer  39   sweeps   40  fwd   39  solve    4.85s  relres 7.6e-08  vs direct 2.8e-06  peak   1.0GB
+  x₂ sweep, two fronts                 setup    2.49s  apply   0.072s  outer  30   sweeps   31  fwd   30  solve    3.33s  relres 6.9e-08  vs direct 1.8e-06  peak   1.0GB
+  x₁ then −x₁, one front               setup    1.88s  apply   0.156s  outer  30   sweeps   62  fwd   30  solve    5.95s  relres 1.5e-07  vs direct 3.2e-06  peak   1.2GB
+  bi-directional x₁,x₂, two fronts     setup    1.95s  apply   0.146s  outer  25   sweeps   52  fwd   25  solve    4.76s  relres 9.5e-08  vs direct 2.0e-06  peak   1.2GB
+  x₁ two fronts, inner 6               setup    1.17s  apply   0.673s  outer  10   sweeps   80  fwd   11  solve    7.51s  relres 3.4e-07  vs direct 1.5e-05  peak   1.2GB
+  bi-directional, inner 6              setup    1.91s  apply   1.275s  outer   5   sweeps   80  fwd    6  solve    7.02s  relres 1.9e-07  vs direct 5.1e-06  peak   1.3GB
+ω/2π = 32, n = 511 (16 ppw outside, 8.0 inside), N = 261121, 64 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -3.00 (n² = 4.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    4.17s  apply   0.162s  outer   6   sweeps    7  fwd    6  solve    1.86s  relres 1.7e-08  vs direct NaN  peak   1.7GB
+  x₁ sweep, two fronts                 setup    4.27s  apply   0.287s  outer  91   sweeps   93  fwd   92  solve   41.70s  relres 5.8e-08  vs direct 5.7e-06  peak   1.9GB
+  x₂ sweep, two fronts                 setup    3.62s  apply   0.278s  outer  54   sweeps   55  fwd   54  solve   23.08s  relres 6.1e-08  vs direct 2.7e-06  peak   1.9GB
+  x₁ then −x₁, one front               setup    6.57s  apply   0.509s  outer  57   sweeps  116  fwd   57  solve   45.28s  relres 1.5e-07  vs direct 3.6e-06  peak   2.4GB
+  bi-directional x₁,x₂, two fronts     setup    6.67s  apply   0.495s  outer  50   sweeps  102  fwd   50  solve   37.95s  relres 1.0e-07  vs direct 3.1e-06  peak   2.6GB
+  x₁ two fronts, inner 6               setup    3.96s  apply   2.823s  outer  25   sweeps  200  fwd   26  solve   69.25s  relres 7.0e-07  vs direct 1.0e-04  peak   2.6GB
+  bi-directional, inner 6              setup    6.60s  apply   4.896s  outer  10   sweeps  160  fwd   11  solve   47.98s  relres 5.7e-07  vs direct 5.9e-05  peak   2.6GB
+
+=================== m_in = -1, ppw = 16 (11.3 inside), control
+ω/2π = 32, n = 511 (16 ppw outside, 11.3 inside), N = 261121, 64 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    4.64s  apply   0.251s  outer   4   sweeps    5  fwd    4  solve    1.14s  relres 6.1e-08  vs direct NaN  peak   1.6GB
+  x₁ sweep, two fronts                 setup    5.29s  apply   0.219s  outer  25   sweeps   26  fwd   25  solve   11.25s  relres 5.8e-08  vs direct 1.3e-06  peak   1.8GB
+  x₂ sweep, two fronts                 setup    4.80s  apply   0.265s  outer  20   sweeps   21  fwd   20  solve    7.46s  relres 7.6e-08  vs direct 1.0e-06  peak   1.9GB
+  bi-directional x₁,x₂, two fronts     setup    6.29s  apply   0.584s  outer  14   sweeps   30  fwd   14  solve    9.68s  relres 7.1e-08  vs direct 1.1e-06  peak   2.4GB
+  x₁ two fronts, inner 6               setup    3.71s  apply   2.399s  outer   5   sweeps   40  fwd    6  solve   12.64s  relres 8.4e-08  vs direct 3.4e-06  peak   2.6GB
+  bi-directional, inner 6              setup    6.55s  apply   4.208s  outer   3   sweeps   46  fwd    4  solve   13.96s  relres 2.9e-07  vs direct 4.3e-05  peak   2.6GB
+
+=================== m_in = -3, ppw = 8 (4 inside): UNDER-RESOLVED, see the note above
+ω/2π = 32, n = 255 (8 ppw outside, 4.0 inside), N = 65025, 32 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -3.00 (n² = 4.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 4
+  exact solve of H                     setup    2.07s  apply   0.036s  outer   5   sweeps    6  fwd    5  solve    0.40s  relres 4.4e-08  vs direct NaN  peak   0.9GB
+  x₁ sweep, two fronts                 setup    2.84s  apply   0.074s  outer  76   sweeps   78  fwd   77  solve    9.91s  relres 6.3e-08  vs direct 4.8e-06  peak   1.0GB
+  x₂ sweep, two fronts                 setup    2.63s  apply   0.070s  outer  49   sweeps   50  fwd   49  solve    6.09s  relres 1.2e-07  vs direct 4.1e-06  peak   1.0GB
+  x₁ then −x₁, one front               setup    2.18s  apply   0.180s  outer  56   sweeps  114  fwd   56  solve   12.72s  relres 2.8e-07  vs direct 1.1e-05  peak   1.2GB
+  bi-directional x₁,x₂, two fronts     setup    2.15s  apply   0.147s  outer  60   sweeps  122  fwd   60  solve   13.49s  relres 1.4e-07  vs direct 5.5e-06  peak   1.3GB
+  x₁ two fronts, inner 6               setup    1.32s  apply   0.788s  outer  16   sweeps  128  fwd   17  solve   12.61s  relres 9.9e-07  vs direct 9.5e-05  peak   1.3GB
+  bi-directional, inner 6              setup    2.33s  apply   1.883s  outer  30   sweeps  480  fwd   31  solve   46.20s  relres 9.7e-07  vs direct 8.6e-05  peak   1.3GB
+ω/2π = 64, n = 511 (8 ppw outside, 4.0 inside), N = 261121, 64 slices; 4 discs R = 0.15 (19.2 λ across) at (½±0.20, ½±0.20), m_in = -3.00 (n² = 4.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 4
+  exact solve of H                     setup    5.10s  apply   0.185s  outer  11   sweeps   12  fwd   11  solve    3.44s  relres 3.9e-08  vs direct NaN  peak   1.8GB
+  x₁ sweep, two fronts                 setup    4.77s  apply   0.277s  outer 297   sweeps  302  fwd  301  solve  142.28s  relres 4.3e-08  vs direct 1.3e-05  peak   1.9GB
+  x₂ sweep, two fronts                 setup    3.67s  apply   0.265s  outer 251   sweeps  256  fwd  255  solve  113.54s  relres 3.1e-08  vs direct 9.1e-06  peak   1.9GB
+  x₁ then −x₁, one front               setup    6.81s  apply   0.434s  outer 300!  sweeps  612  fwd  305  solve  220.34s  relres 6.2e-02  vs direct 2.1e+00  peak   2.4GB
+  bi-directional x₁,x₂, two fronts     setup    6.56s  apply   0.585s  outer 300!  sweeps  612  fwd  305  solve  223.09s  relres 5.5e-03  vs direct 3.1e-01  peak   2.5GB
+  x₁ two fronts, inner 6               setup    3.81s  apply   2.336s  outer  54   sweeps  432  fwd   55  solve  149.39s  relres 8.9e-07  vs direct 4.3e-04  peak   2.7GB
+  bi-directional, inner 6              setup    6.93s  apply   4.823s  outer 300!  sweeps 4800  fwd  305  solve 1474.16s  relres 4.7e-04  vs direct 1.9e-01  peak   2.9GB
+
+=================== CONTROL: the same sweep applied twice (axes = (1, 1)) against the direction flip and the orthogonal pass
+m_in = -1, ppw = 8, incidence along x2, same parameters as the main table
+
+  julia --project=. -t 6 examples/lattice_compare.jl 16 32 64 --only=direct,x1f1,rep1,alt,x1,rep2,bidir
+  julia --project=. -t 6 examples/lattice_compare.jl 128 --only=direct,rep1,rep2
+
+ω/2π = 16, n = 127 (8 ppw outside, 5.7 inside), N = 16129, 16 slices; 4 discs R = 0.15 (4.8 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    0.21s  apply   0.004s  outer   4   sweeps    5  fwd    4  solve    0.09s  relres 2.1e-09  vs direct NaN  peak   0.7GB
+  x₁ sweep, two fronts                 setup    1.25s  apply   0.009s  outer  22   sweeps   23  fwd   22  solve    0.31s  relres 8.9e-08  vs direct 1.7e-06  peak   0.7GB
+  x₁ sweep, one front                  setup    0.18s  apply   0.008s  outer  21   sweeps   22  fwd   21  solve    0.27s  relres 1.7e-07  vs direct 2.3e-06  peak   0.7GB
+  x₁ then −x₁, one front               setup    0.29s  apply   0.017s  outer  15   sweeps   32  fwd   15  solve    1.14s  relres 9.6e-08  vs direct 9.5e-07  peak   0.8GB
+  x₁ then x₁ again, one front          setup    0.66s  apply   0.043s  outer  12   sweeps   26  fwd   12  solve    2.09s  relres 1.7e-07  vs direct 1.3e-06  peak   0.8GB
+  bi-directional x₁,x₂, two fronts     setup    4.24s  apply   0.118s  outer  13   sweeps   28  fwd   13  solve    1.91s  relres 4.6e-08  vs direct 5.2e-07  peak   0.8GB
+  x₁ then x₁ again, two fronts         setup    1.45s  apply   0.056s  outer  13   sweeps   28  fwd   13  solve    2.09s  relres 7.0e-08  vs direct 4.9e-07  peak   0.9GB
+ω/2π = 32, n = 255 (8 ppw outside, 5.7 inside), N = 65025, 32 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    6.11s  apply   0.069s  outer   4   sweeps    5  fwd    4  solve    0.71s  relres 3.7e-09  vs direct NaN  peak   1.0GB
+  x₁ sweep, two fronts                 setup    2.53s  apply   0.081s  outer  27   sweeps   28  fwd   27  solve    6.48s  relres 7.6e-08  vs direct 1.4e-06  peak   1.0GB
+  x₁ sweep, one front                  setup    1.32s  apply   0.070s  outer  27   sweeps   28  fwd   27  solve    3.15s  relres 6.9e-08  vs direct 1.4e-06  peak   1.0GB
+  x₁ then −x₁, one front               setup    2.18s  apply   0.144s  outer  19   sweeps   40  fwd   19  solve    3.90s  relres 7.0e-08  vs direct 9.3e-07  peak   1.3GB
+  x₁ then x₁ again, one front          setup    2.36s  apply   0.190s  outer  21   sweeps   44  fwd   21  solve    4.60s  relres 7.5e-08  vs direct 1.1e-06  peak   1.3GB
+  bi-directional x₁,x₂, two fronts     setup    2.38s  apply   0.142s  outer  19   sweeps   40  fwd   19  solve    3.75s  relres 4.3e-08  vs direct 7.7e-07  peak   1.3GB
+  x₁ then x₁ again, two fronts         setup    2.05s  apply   0.145s  outer  19   sweeps   40  fwd   19  solve    4.41s  relres 3.2e-08  vs direct 5.8e-07  peak   1.3GB
+ω/2π = 64, n = 511 (8 ppw outside, 5.7 inside), N = 261121, 64 slices; 4 discs R = 0.15 (19.2 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    6.28s  apply   0.215s  outer   5   sweeps    6  fwd    5  solve    2.13s  relres 1.7e-08  vs direct NaN  peak   1.8GB
+  x₁ sweep, two fronts                 setup    4.85s  apply   0.336s  outer  38   sweeps   39  fwd   38  solve   15.49s  relres 3.7e-08  vs direct 2.0e-06  peak   1.9GB
+  x₁ sweep, one front                  setup    3.78s  apply   0.279s  outer  38   sweeps   39  fwd   38  solve   15.73s  relres 4.8e-08  vs direct 2.2e-06  peak   1.9GB
+  x₁ then −x₁, one front               setup    8.44s  apply   0.629s  outer  22   sweeps   46  fwd   22  solve   16.36s  relres 4.1e-08  vs direct 1.8e-06  peak   2.3GB
+  x₁ then x₁ again, one front          setup    6.65s  apply   0.501s  outer  39   sweeps   80  fwd   39  solve   29.26s  relres 1.3e-07  vs direct 3.2e-06  peak   2.5GB
+  bi-directional x₁,x₂, two fronts     setup    7.86s  apply   0.575s  outer  21   sweeps   44  fwd   21  solve   15.71s  relres 4.7e-08  vs direct 2.1e-06  peak   2.5GB
+  x₁ then x₁ again, two fronts         setup    7.68s  apply   0.588s  outer  36   sweeps   74  fwd   36  solve   29.13s  relres 5.0e-08  vs direct 1.1e-06  peak   2.5GB
+ω/2π = 128, n = 1023 (8 ppw outside, 5.7 inside), N = 1046529, 128 slices; 4 discs R = 0.15 (38.4 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup   37.08s  apply   1.037s  outer  14   sweeps   15  fwd   14  solve   17.78s  relres 6.3e-09  vs direct NaN  peak   4.8GB
+  x₁ then x₁ again, one front          setup   36.97s  apply   2.631s  outer 300!  sweeps  612  fwd  305  solve  615.73s  relres 3.6e-07  vs direct 3.2e-05  peak   7.1GB
+  x₁ then x₁ again, two fronts         setup   22.18s  apply   1.162s  outer 160   sweeps  326  fwd  162  solve  323.30s  relres 2.6e-07  vs direct 2.5e-05  peak   7.3GB
+
+Residual diagnostic on the sparse system, f = S * rhs (the first application's input): the residual
+r1 = f - H M1 f of a first pass lies entirely on the grid line of each slice that faces its eliminated
+neighbour, and ||(I - H M2) r1|| / ||r1|| is the reduction a second pass M2 achieves on it.
+
+
+ω/2π = 16, n = 127, 16 slices
+  residual of one front, +x₁ : 100.0000% of ‖r‖² on the predicted lines (10.3% of the unknowns)
+  residual of one front, −x₁ : 100.0000% of ‖r‖² on the predicted lines (10.3% of the unknowns)
+  residual of two fronts     : 100.0000% of ‖r‖² on the predicted lines (10.3% of the unknowns)
+  first pass, one front +x₁: ‖r₁‖/‖f‖ = 0.036
+    second pass on r₁:  +x₁ again 0.463   −x₁ 0.520   x₂ one front 0.380   x₂ two fronts 0.470
+  first pass, two fronts x₁: ‖r₁‖/‖f‖ = 0.034
+    second pass on r₁:  x₁ again 0.495   x₂ 0.491
+  control input, residual of the x₂ sweep: +x₁ 0.400   −x₁ 0.407   x₁ two fronts 0.394   x₂ again 0.546
+
+ω/2π = 32, n = 255, 32 slices
+  residual of one front, +x₁ : 100.0000% of ‖r‖² on the predicted lines (11.4% of the unknowns)
+  residual of one front, −x₁ : 100.0000% of ‖r‖² on the predicted lines (11.4% of the unknowns)
+  residual of two fronts     : 100.0000% of ‖r‖² on the predicted lines (11.4% of the unknowns)
+  first pass, one front +x₁: ‖r₁‖/‖f‖ = 0.026
+    second pass on r₁:  +x₁ again 1.059   −x₁ 0.669   x₂ one front 0.759   x₂ two fronts 0.713
+  first pass, two fronts x₁: ‖r₁‖/‖f‖ = 0.023
+    second pass on r₁:  x₁ again 1.082   x₂ 0.730
+  control input, residual of the x₂ sweep: +x₁ 0.628   −x₁ 0.635   x₁ two fronts 0.597   x₂ again 1.117
+
+ω/2π = 64, n = 511, 64 slices
+  residual of one front, +x₁ : 100.0000% of ‖r‖² on the predicted lines (11.9% of the unknowns)
+  residual of one front, −x₁ : 100.0000% of ‖r‖² on the predicted lines (11.9% of the unknowns)
+  residual of two fronts     : 100.0000% of ‖r‖² on the predicted lines (11.9% of the unknowns)
+  first pass, one front +x₁: ‖r₁‖/‖f‖ = 0.018
+    second pass on r₁:  +x₁ again 1.490   −x₁ 0.624   x₂ one front 0.772   x₂ two fronts 0.628
+  first pass, two fronts x₁: ‖r₁‖/‖f‖ = 0.015
+    second pass on r₁:  x₁ again 1.273   x₂ 0.679
+  control input, residual of the x₂ sweep: +x₁ 0.543   −x₁ 0.576   x₁ two fronts 0.489   x₂ again 0.961
+
+=================== FOUR ONE-FRONT PASSES on successive residuals: x1, -x1, x2, -x2 and the interleaved x1, x2, -x1, -x2
+m_in = -1, ppw = 8, incidence along x2, same parameters as the main table.  Solve times in this block ran
+concurrently with other jobs and are not comparable with other blocks; compare sweeps.
+
+  julia --project=. -t 6 examples/lattice_compare.jl 16 32 64 --only=direct,quad,quad2
+  julia --project=. -t 6 examples/lattice_compare.jl 128 --only=direct,quad,quad2
+
+ω/2π = 16, n = 127 (8 ppw outside, 5.7 inside), N = 16129, 16 slices; 4 discs R = 0.15 (4.8 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    0.56s  apply   0.010s  outer   4   sweeps    5  fwd    4  solve    0.14s  relres 2.1e-09  vs direct NaN  peak   0.7GB
+  x₁, −x₁, x₂, −x₂, one front          setup    4.11s  apply   0.073s  outer   9   sweeps   40  fwd    9  solve    1.05s  relres 3.4e-08  vs direct 4.2e-07  peak   0.8GB
+  x₁, x₂, −x₁, −x₂, one front          setup    2.31s  apply   0.090s  outer   8   sweeps   36  fwd    8  solve    2.00s  relres 4.0e-08  vs direct 3.8e-07  peak   0.9GB
+ω/2π = 32, n = 255 (8 ppw outside, 5.7 inside), N = 65025, 32 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    2.42s  apply   0.071s  outer   4   sweeps    5  fwd    4  solve    0.69s  relres 3.7e-09  vs direct NaN  peak   1.1GB
+  x₁, −x₁, x₂, −x₂, one front          setup    6.80s  apply   0.322s  outer  12   sweeps   52  fwd   12  solve    8.28s  relres 4.9e-08  vs direct 5.8e-07  peak   1.5GB
+  x₁, x₂, −x₁, −x₂, one front          setup    3.73s  apply   0.288s  outer  15   sweeps   64  fwd   15  solve    5.07s  relres 4.4e-08  vs direct 5.8e-07  peak   1.5GB
+ω/2π = 64, n = 511 (8 ppw outside, 5.7 inside), N = 261121, 64 slices; 4 discs R = 0.15 (19.2 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup    5.87s  apply   0.179s  outer   5   sweeps    6  fwd    5  solve    1.66s  relres 1.7e-08  vs direct NaN  peak   1.8GB
+  x₁, −x₁, x₂, −x₂, one front          setup   12.38s  apply   1.052s  outer  18   sweeps   76  fwd   18  solve   21.83s  relres 3.3e-08  vs direct 8.8e-07  peak   3.4GB
+  x₁, x₂, −x₁, −x₂, one front          setup   11.12s  apply   0.909s  outer  24   sweeps  100  fwd   24  solve   28.14s  relres 3.9e-08  vs direct 7.5e-07  peak   3.6GB
+ω/2π = 128, n = 1023 (8 ppw outside, 5.7 inside), N = 1046529, 128 slices; 4 discs R = 0.15 (38.4 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 6
+  exact solve of H                     setup   34.45s  apply   0.680s  outer  14   sweeps   15  fwd   14  solve   15.62s  relres 6.3e-09  vs direct NaN  peak   4.8GB
+  x₁, −x₁, x₂, −x₂, one front          setup   51.69s  apply   4.526s  outer  59   sweeps  240  fwd   59  solve  150.64s  relres 5.3e-08  vs direct 7.6e-06  peak  11.9GB
+  x₁, x₂, −x₁, −x₂, one front          setup   26.71s  apply   1.895s  outer 120   sweeps  488  fwd  121  solve  400.14s  relres 7.4e-08  vs direct 1.9e-05  peak  12.0GB
+
+Per-pass reduction of the running residual on the sparse system, f = S * rhs, one front:
+
+
+ω/2π = 32
+  (1, -1, 2, -2)   per-pass residual factors 0.026  0.669  0.995  0.753   final ‖r‖/‖f‖ 1.33e-02   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.122
+  (1, 2, -1, -2)   per-pass residual factors 0.026  0.759  0.769  0.845   final ‖r‖/‖f‖ 1.31e-02   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.127
+  (1, -1, 1, -1)   per-pass residual factors 0.026  0.669  0.921  0.823   final ‖r‖/‖f‖ 1.34e-02   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.125
+  (1, 2, 1, 2)     per-pass residual factors 0.026  0.759  0.802  0.932   final ‖r‖/‖f‖ 1.50e-02   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.141
+
+ω/2π = 64
+  (1, -1, 2, -2)   per-pass residual factors 0.018  0.624  0.970  0.883   final ‖r‖/‖f‖ 9.56e-03   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.115
+  (1, 2, -1, -2)   per-pass residual factors 0.018  0.772  0.848  1.069   final ‖r‖/‖f‖ 1.25e-02   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.136
+  (1, -1, 1, -1)   per-pass residual factors 0.018  0.624  1.105  0.789   final ‖r‖/‖f‖ 9.73e-03   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.119
+  (1, 2, 1, 2)     per-pass residual factors 0.018  0.772  1.180  0.998   final ‖r‖/‖f‖ 1.63e-02   error ‖u−H⁻¹f‖/‖H⁻¹f‖ 0.183
+
+=================== L-SWEEPS, and a second L-sweep on the half-box-shifted checkerboard applied to the residual (shifts = ((0,0),(0.5,0.5)))
+m_in = -1, ppw = 8, incidence along x2, nbox = 64, pad = 8, same parameters as the main table
+
+  julia --project=. -t 8 examples/lattice_compare.jl 16 32 64 --only=direct,lsweep,lsweep2,lsweepi6,lsweep2i6
+  julia --project=. -t 8 examples/lattice_compare.jl 128 --only=direct,lsweep,lsweep2,lsweepi6,lsweep2i6
+
+ω/2π = 16, n = 127 (8 ppw outside, 5.7 inside), N = 16129, 16 slices; 4 discs R = 0.15 (4.8 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup    1.40s  apply   0.010s  outer   4   sweeps    5  fwd    4  solve    0.17s  relres 2.1e-09  vs direct NaN  peak   0.7GB
+  L-sweeps pad 8                       setup    5.32s  apply   0.025s  outer  13   sweeps   14  fwd   13  solve    1.89s  relres 4.9e-08  vs direct 4.7e-07  peak   0.8GB
+  L-sweeps + half-box-shifted L-sweeps setup    2.02s  apply   0.172s  outer   6   sweeps   14  fwd    6  solve    1.28s  relres 6.6e-08  vs direct 3.5e-07  peak   0.9GB
+  L-sweeps, inner 6                    setup    0.49s  apply   0.632s  outer   3   sweeps   20  fwd    4  solve    1.79s  relres 6.5e-08  vs direct 3.9e-06  peak   1.0GB
+  L-sweeps + shifted, inner 6          setup    1.12s  apply   0.379s  outer   3   sweeps   24  fwd    4  solve    1.39s  relres 6.6e-08  vs direct 4.2e-06  peak   1.1GB
+ω/2π = 32, n = 255 (8 ppw outside, 5.7 inside), N = 65025, 32 slices; 4 discs R = 0.15 (9.6 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup   13.52s  apply   0.064s  outer   4   sweeps    5  fwd    4  solve    0.56s  relres 3.7e-09  vs direct NaN  peak   1.3GB
+  L-sweeps pad 8                       setup    1.95s  apply   0.052s  outer  33   sweeps   34  fwd   33  solve    9.92s  relres 1.1e-07  vs direct 1.5e-06  peak   1.3GB
+  L-sweeps + half-box-shifted L-sweeps setup    3.55s  apply   0.292s  outer  15   sweeps   32  fwd   15  solve    5.77s  relres 3.2e-08  vs direct 3.9e-07  peak   1.4GB
+  L-sweeps, inner 6                    setup    1.77s  apply   0.826s  outer   6   sweeps   48  fwd    7  solve    4.26s  relres 1.5e-07  vs direct 4.7e-06  peak   1.4GB
+  L-sweeps + shifted, inner 6          setup    2.09s  apply   0.815s  outer   3   sweeps   46  fwd    4  solve    3.64s  relres 5.4e-08  vs direct 3.8e-06  peak   1.4GB
+ω/2π = 64, n = 511 (8 ppw outside, 5.7 inside), N = 261121, 64 slices; 4 discs R = 0.15 (19.2 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup    7.85s  apply   0.200s  outer   5   sweeps    6  fwd    5  solve    1.91s  relres 1.7e-08  vs direct NaN  peak   1.8GB
+  L-sweeps pad 8                       setup    4.27s  apply   0.159s  outer  57   sweeps   58  fwd   57  solve   18.41s  relres 2.8e-07  vs direct 4.7e-06  peak   1.9GB
+  L-sweeps + half-box-shifted L-sweeps setup    5.80s  apply   0.456s  outer  31   sweeps   64  fwd   31  solve   17.94s  relres 5.2e-08  vs direct 2.6e-06  peak   2.4GB
+  L-sweeps, inner 6                    setup    4.26s  apply   2.356s  outer  10   sweeps   80  fwd   11  solve   22.56s  relres 8.0e-07  vs direct 9.6e-05  peak   2.4GB
+  L-sweeps + shifted, inner 6          setup    7.78s  apply   4.002s  outer   5   sweeps   80  fwd    6  solve   21.41s  relres 9.3e-07  vs direct 1.2e-04  peak   2.4GB
+
+ω/2π = 128, n = 1023 (8 ppw outside, 5.7 inside), N = 1046529, 128 slices; 4 discs R = 0.15 (38.4 λ across) at (½±0.20, ½±0.20), m_in = -1.00 (n² = 2.00), incidence (0.00, 1.00), GMRES(60) to 1e-06, threads = 8
+  exact solve of H                     setup   71.94s  apply   0.678s  outer  14   sweeps   15  fwd   14  solve   23.90s  relres 6.3e-09  vs direct NaN  peak   4.8GB
+  L-sweeps pad 8                       setup   21.51s  apply   1.163s  outer 300!  sweeps  306  fwd  305  solve  369.08s  relres 5.2e-06  vs direct 1.4e-02  peak   5.5GB
+  L-sweeps + half-box-shifted L-sweeps setup   14.20s  apply   1.312s  outer 147   sweeps  300  fwd  149  solve  268.76s  relres 1.3e-08  vs direct 2.5e-05  peak   6.9GB
+  L-sweeps, inner 6                    setup    8.38s  apply   5.843s  outer  40   sweeps  320  fwd   41  solve  242.27s  relres 6.7e-07  vs direct 4.0e-03  peak   7.1GB
+  L-sweeps + shifted, inner 6          setup   13.42s  apply  11.140s  outer  16   sweeps  256  fwd   17  solve  183.26s  relres 7.5e-07  vs direct 2.8e-03  peak   7.4GB
+
+Residual diagnostics on the sparse system, f = S * rhs: the L-sweep's residual lies on the layer each side
+of every box interface; reduction factors ||(I - H M2) r|| / ||r|| of a second pass on the first pass's residual.
+
+
+ω/2π = 32, n = 255, L-sweep CDD 4 x 4 (boxes of ~68 points, pad 8)
+  L-sweep residual: ‖r‖/‖f‖ = 0.024, 100.0000% of ‖r‖² on the layer each side of every box interface (4.3% of unknowns)
+  reduction of the L-sweep's residual:   L-sweep again 0.701   layered +x₁ 0.369   layered −x₁ 0.302   layered x₂ 0.347
+  reduction of the +x₁ sweep's residual: L-sweep 0.817   layered +x₁ again 1.059   layered −x₁ 0.669
+  mean |·|² inside the discs / outside, exact solution of H: 3.64
+    error after x₁                 ‖e‖/‖u‖ = 0.219   inside/outside density ratio 1.91   share of ‖e‖² inside the discs 43%
+    error after x₁, −x₁            ‖e‖/‖u‖ = 0.163   inside/outside density ratio 2.75   share of ‖e‖² inside the discs 52%
+    error after x₁, −x₁, x₂, −x₂   ‖e‖/‖u‖ = 0.122   inside/outside density ratio 3.42   share of ‖e‖² inside the discs 58%
+    error after L-sweep            ‖e‖/‖u‖ = 0.090   inside/outside density ratio 2.23   share of ‖e‖² inside the discs 47%
+    (discs hold 29% of the physical grid points)
+
+ω/2π = 64, n = 511, L-sweep CDD 8 x 8 (boxes of ~66 points, pad 8)
+  L-sweep residual: ‖r‖/‖f‖ = 0.013, 100.0000% of ‖r‖² on the layer each side of every box interface (5.2% of unknowns)
+  reduction of the L-sweep's residual:   L-sweep again 0.852   layered +x₁ 0.461   layered −x₁ 0.481   layered x₂ 0.461
+  reduction of the +x₁ sweep's residual: L-sweep 0.757   layered +x₁ again 1.490   layered −x₁ 0.624
+  mean |·|² inside the discs / outside, exact solution of H: 3.46
+    error after x₁                 ‖e‖/‖u‖ = 0.192   inside/outside density ratio 1.75   share of ‖e‖² inside the discs 41%
+    error after x₁, −x₁            ‖e‖/‖u‖ = 0.134   inside/outside density ratio 3.01   share of ‖e‖² inside the discs 54%
+    error after x₁, −x₁, x₂, −x₂   ‖e‖/‖u‖ = 0.115   inside/outside density ratio 3.94   share of ‖e‖² inside the discs 61%
+    error after L-sweep            ‖e‖/‖u‖ = 0.084   inside/outside density ratio 3.34   share of ‖e‖² inside the discs 57%
+    (discs hold 28% of the physical grid points)
+
+
+ω/2π = 32: boards 4x4 and shifted 5x5
+  single-application error: L-sweep 0.090   shifted L-sweep 0.098   layered −x₁ 0.192
+  reduction of the L-sweep's residual:         same board 0.701   shifted (½,½) 0.576   shifted (½,0) 0.622   layered −x₁ 0.302
+  reduction of the shifted L-sweep's residual: same board 0.691   unshifted 0.545
+  alternated error: L then shifted 0.0548   shifted then L 0.0546   L then layered −x₁ 0.0630   L, shifted, L, shifted 0.0368
+
+ω/2π = 64: boards 8x8 and shifted 9x9
+  single-application error: L-sweep 0.084   shifted L-sweep 0.080   layered −x₁ 0.181
+  reduction of the L-sweep's residual:         same board 0.852   shifted (½,½) 0.747   shifted (½,0) 0.824   layered −x₁ 0.481
+  reduction of the shifted L-sweep's residual: same board 0.681   unshifted 0.552
+  alternated error: L then shifted 0.0591   shifted then L 0.0515   L then layered −x₁ 0.0860   L, shifted, L, shifted 0.0464

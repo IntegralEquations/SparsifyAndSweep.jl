@@ -1,0 +1,43 @@
+Does a coarser decomposition -- fewer, larger boxes -- cut the iteration count?
+The hypothesis was that the count tracks the number of interfaces a wave crosses,
+q, so that halving q would roughly halve it.  Converging lens, omega/2pi = 256,
+n = 2047, 16 threads, one process per row (examples/lsweep_compare.jl).
+
+  julia --project=. -t 16 examples/lsweep_compare.jl 256 --only=lsweep8b96
+  julia --project=. -t 16 examples/lsweep_compare.jl 256 --only=lsweep8b128
+  julia --project=. -t 16 examples/lsweep_compare.jl 256 --only=lsweep16b128
+
+box (points)  q     pad   setup      apply    iters  solve     peak
+  64          32    8     11.10s     1.554s    14    28.34s    20.5GB
+  96          22    8     11.11s     1.513s    14    27.22s    18.9GB
+ 128          16    8     11.59s     1.424s    15    27.64s    18.6GB
+  64          32    16    15.36s     2.239s    10    27.95s    27.0GB
+ 128          16    16    14.36s     1.663s    10    22.01s    21.3GB
+
+and at omega/2pi = 128 (n = 1023), 128-point boxes, q = 8, pad 8:
+ 128           8    8      3.99s     0.367s     7     3.11s     5.0GB
+against the 64-point row of results/lsweep_compare.txt at that frequency:
+  64          16    8      3.33s     0.393s     7     3.61s     5.6GB
+
+VERDICT: refuted.  Halving q at fixed frequency and pad leaves the count where it
+was: 14, 14, 15 at pad 8, and 10, 10 at pad 16.  The count is set by the pad in
+wavelengths and by the frequency, not by how many interfaces there are.  Compare
+128-point boxes at omega/2pi = 256 with 64-point boxes at 128: the same q = 16
+and the same pad, yet 15 iterations against 7.  What doubled is the frequency --
+the domain in wavelengths -- not the interface count.
+
+So the account given earlier for the growth -- a per-interface reflection that
+accumulates over q crossings -- is wrong, and has been withdrawn from the note.
+What is left is the observation: at a pad fixed in wavelengths the count grows
+about linearly with omega (7 -> 14 at one wavelength), and a thicker pad brings it
+down (14, 10, 8 at one, two, three wavelengths).  Why the propagation distance in
+wavelengths should matter at fixed per-interface absorption is open.
+
+What larger boxes do buy is bytes.  The padded box carries (s + 2(2 + pad))^2
+unknowns for s^2 owned, a redundancy of 1.72x at s = 64 and 1.34x at s = 128 with
+pad 8, and 2.44x against 1.64x with pad 16.  Less redundancy means less factor
+traffic per application and less memory: at pad 16 the 128-point boxes apply in
+1.66s against 2.24s and peak at 21.3 GB against 27.0, for the same ten iterations.
+128-point boxes with a two-wavelength pad is the fastest configuration measured at
+this frequency, 14.4 + 22.0 = 36.4s to solution against 39.4s for the 64-point
+one-wavelength default and 53.4s for the layered sweep.

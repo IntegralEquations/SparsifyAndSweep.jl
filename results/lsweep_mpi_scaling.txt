@@ -1,0 +1,36 @@
+L-sweeps setup and one application under MPI, timed as the slowest rank, best of
+three applications.  Converging lens, h = lambda/8, boxes of ~64 points, pad 8.
+Ranks bound to disjoint cores (examples/run_mpi_bound.jl).  16-core Ryzen 7950X3D.
+
+  julia --project=test examples/run_mpi_bound.jl <ranks> <threads> examples/lsweep_mpi.jl 256
+
+--- omega/2pi = 128, n = 1023, 256 boxes (from the earlier study, default BLAS) ---
+  1 process x 16 threads   setup  3.71s   apply  0.37s
+  4 ranks   x  4 threads   setup  4.72s   apply  0.43s
+  8 ranks   x  2 threads   setup  3.32s   apply  0.43s
+ 16 ranks   x  1 thread    setup  2.96s   apply  0.41s
+  (unbound, 4x4 applies in 1.18s: the launcher pins each rank to one core and
+   its threads then share it)
+
+--- omega/2pi = 256, n = 2047, 1024 boxes, default BLAS threading ---
+  1 process x 16 threads   setup  7.93s / 7.83s   apply 1.441s / 1.445s   peak/rank 15.1GB
+  4 ranks   x  4 threads   setup 13.84s / 13.50s  apply 1.616s / 1.604s   peak/rank  4.7GB
+  8 ranks   x  2 threads   setup  7.60s / 7.47s   apply 1.950s / 1.860s   peak/rank  2.9GB
+ 16 ranks   x  1 thread    setup  4.86s / 4.82s   apply 1.680s / 1.685s   peak/rank  2.1GB
+
+The 4x4 setup is a reproducible 3x outlier: each rank starts a full OpenBLAS
+thread pool while bound to only four cores, so the pools oversubscribe.  With
+OPENBLAS_NUM_THREADS=1 it disappears.
+
+--- omega/2pi = 256, OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 (recommended) ---
+  1 process x 16 threads   setup  6.80s   apply 1.433s   peak/rank 15.1GB
+  4 ranks   x  4 threads   setup  4.54s   apply 1.622s   peak/rank  4.7GB
+  8 ranks   x  2 threads   setup  4.77s   apply 1.982s   peak/rank  2.9GB
+ 16 ranks   x  1 thread    setup  4.48s   apply 1.694s   peak/rank  2.1GB
+
+Setup is flat at 4.5-4.8s across every distributed configuration and 1.5x slower
+with threads alone, which matches the earlier finding that the sparse LU threads
+poorly but distributes well.  The application is flat at 1.4-2.0s.  Memory per
+rank falls 7x from one process to sixteen: the boxes are partitioned, only the
+grid-sized vectors and the kernel are replicated.  That is what puts larger
+problems than this node can hold within reach of a cluster.

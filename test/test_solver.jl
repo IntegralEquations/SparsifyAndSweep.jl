@@ -95,3 +95,32 @@ end
     @test res[2].plain > res[1].plain                 # plain degrades with ω
     @test res[2].pre <= res[1].pre + 2                # preconditioned does not
 end
+
+@testset "bi-directional and alternating sweeps as preconditioners" begin
+    n, f = 63, 8
+    ω = 2π * f
+    P = LSProblem(n, ω, velocity(:converging, n); b = 8)
+    bvec = rhs(P, plane_wave(n, ω))
+    uref = dense_matrix(P) \ bvec
+    base = solve(P, bvec; M = SweepPreconditioner(P), tol = 1e-10, maxiter = 200)
+    for (kw, sweeps) in (((; axes = (2,)), 1), ((; axes = (1, 2)), 2),
+                         ((; axes = (1, -1), fronts = 1), 2), ((; axes = (1, 2, 1)), 3))
+        M = SweepPreconditioner(P; mode = :sweep, kw...)
+        @test M.fact isa (sweeps == 1 ? SweepFactorization : AlternatingSweep)
+        M.nsweeps[] = 0
+        apply_M(M, bvec)
+        @test M.nsweeps[] == sweeps                  # the accounting counts sweeps, not applications
+        r = solve(P, bvec; M = M, tol = 1e-10, maxiter = 200)
+        @test r.converged
+        @test norm(r.u - uref) / norm(uref) < 1e-8
+        @info "iterations" kw r.iters base.iters
+        sweeps > 1 && @test r.iters <= base.iters
+    end
+    # Alg. 3 of Zepeda-Núñez & Zhao: the bi-directional sweep inside an inner GMRES on H
+    M = SweepPreconditioner(P; axes = (1, 2), inner = 6, inner_tol = 1e-3)
+    r = solve(P, bvec; M = M, tol = 1e-10, maxiter = 50)
+    @test r.converged
+    @test norm(r.u - uref) / norm(uref) < 1e-8
+    @test r.iters <= base.iters
+    @test_throws ArgumentError SweepPreconditioner(P; axes = ())
+end

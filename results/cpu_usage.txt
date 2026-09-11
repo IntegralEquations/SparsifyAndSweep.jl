@@ -1,0 +1,50 @@
+Core occupancy during a solve at omega/2pi = 256 (n = 2047), read from /proc
+(utime+stime) rather than inferred from wall-clock scaling.  "cores busy" is CPU
+seconds divided by elapsed seconds: 1.00 means the phase ran on a single core.
+Converging lens, julia -t 16, 16-core Ryzen 7950X3D.  examples/cpu_usage.jl
+
+  julia --project=. -t 16 examples/cpu_usage.jl 256 sweep
+  julia --project=. -t 16 examples/cpu_usage.jl 256 lsweep
+
+phase                            wall        cpu    cores busy   threads >20ms
+--- layered sweep, default BLAS (16 threads) ---
+setup                          31.688s    47.430s      1.50
+one preconditioner application  2.094s     2.100s      1.00          1
+five applications              10.210s    10.210s      1.00          1
+one dense operator application  0.292s     0.290s      0.99
+full solve phase (GMRES)       27.768s    42.220s      1.52         31
+                               9 iterations, relres 2.1e-08
+
+--- layered sweep, OPENBLAS_NUM_THREADS=1 ---
+setup                          31.621s    36.140s      1.14
+one preconditioner application  2.099s     2.100s      1.00          1
+five applications              10.143s    10.150s      1.00          1
+one dense operator application  0.297s     0.300s      1.01
+full solve phase (GMRES)       27.833s    28.350s      1.02         16
+                               9 iterations, relres 2.1e-08
+
+--- L-sweeps pad 8, default BLAS (positive control) ---
+setup                          13.066s   150.470s     11.52
+one preconditioner application  1.497s    20.590s     13.75         17
+five applications               7.688s   103.740s     13.49         32
+one dense operator application  0.308s     0.310s      1.01
+full solve phase (GMRES)       32.022s   365.670s     11.42         47
+                               14 iterations, relres 3.0e-08
+
+CONCLUSION.  The layered preconditioner application occupies exactly 1.00 cores,
+and exactly one OS thread accumulates CPU time in it (2.090s of the 2.094s
+elapsed).  There is no multithreading in it whatsoever.  The same holds for five
+applications back to back, and it is independent of the BLAS thread count.  The
+dense operator is likewise serial, since FFTW.set_num_threads is never called.
+
+The 1.50 and 1.52 figures in the default-BLAS rows are not work.  With OpenBLAS
+pinned to one thread the same phases take the same wall time -- 31.62s against
+31.69s for setup, 27.83s against 27.77s for the solve -- while the core count
+drops to 1.14 and 1.02.  Those extra fourteen CPU-seconds are OpenBLAS worker
+threads spinning at a barrier, and they buy nothing.  Reading core occupancy
+without pinning BLAS would have overstated the parallelism by half.
+
+L-sweeps, measured identically, occupies 13.75 cores in one application.  So the
+diagnostic does detect threading when it is there.  Note also that it burns 20.59
+CPU-seconds on work that costs 9.01s serially, a 2.3x inflation, which is why
+13.75 cores yield only the 6.4x speedup measured in results/thread_scaling.txt.

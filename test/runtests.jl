@@ -22,4 +22,15 @@ using Test
     @testset "3D" begin
         include("test_3d.jl")
     end
+    @testset "L-sweeps" begin
+        include("test_lsweep.jl")
+    end
+    if Base.find_package("MPI") !== nothing
+        @testset "L-sweeps under MPI" begin
+            include("mpi_launch_test.jl")
+        end
+    else
+        @info "MPI.jl not in this environment; skipping the distributed L-sweeps test " *
+              "(run the tests from the test/ environment to include it)"
+    end
 end

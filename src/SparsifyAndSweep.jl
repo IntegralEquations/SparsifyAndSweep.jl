@@ -48,6 +48,9 @@ export sparsify_stencils, pml_stencil, build_H, rhs_operator
 export boundary_stencils, BoundaryStencils, build_H_ying, rhs_operator_ying
 export clipped_offsets, clip_signature, far_range
 export sweep_setup, sweep_solve, slice_ranges, leafstats
+export AlternatingSweep, alternating_setup, alternating_solve, nstencils
+export lsweep_setup, lsweep_solve, LSweepFactorization, LocalComm, MPIComm, AbstractComm
+export row_partition, cdd_ranges, nranks, myrank
 export SlabSolver, DirectSlab, SweptSlab, SweepFactorization
 export solve, SolveReport
 export self_weight, green, green2d, ToeplitzConv, Kernel, kval
@@ -59,6 +62,7 @@ include("media.jl")
 include("stencils.jl")
 include("system.jl")
 include("sweep.jl")
+include("lsweep.jl")
 include("solver.jl")
 
 end # module
